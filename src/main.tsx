@@ -1,29 +1,29 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { Provider } from "react-redux";
+import { store } from "./app/store";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "./app/queryClient";
+import { BrowserRouter } from "react-router-dom";
+import AuthProvider from "./app/providers/AuthProvider";
+import ThemeProvider from "./app/providers/ThemeProvider";
+import "./styles/globals.css";
+import App from "./App";
 
-const Home = () => {
-  return (
-    <>
-      <div className="hero border-1 pb-3">
-        <div className="card bg-dark text-white border-0 mx-3">
-          <img
-            className="card-img img-fluid"
-            src="./assets/main.png.jpg"
-            alt="Card"
-            height={500}
-          />
-          <div className="card-img-overlay d-flex align-items-center">
-            <div className="container">
-              <h5 className="card-title fs-1 text fw-lighter">New Season Arrivals</h5>
-              <p className="card-text fs-5 d-none d-sm-block ">
-                This is a wider card with supporting text below as a natural
-                lead-in to additional content. This content is a little bit
-                longer.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
+console.log("Bootcamp-Web main.tsx loaded");
 
-export default Home;
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <Provider store={store}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <ThemeProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ThemeProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </Provider>
+  </React.StrictMode>
+);
