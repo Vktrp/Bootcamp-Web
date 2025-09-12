@@ -17,13 +17,15 @@ export default function Header(){
 
   return (
     <header className="site-header">
-      <div className="container-page bar">
-        <Link to="/products" style={{ fontWeight: 700, fontSize: "1.2rem" }}>Sneakershop</Link>
-        <form style={{ flex: 1 }} onSubmit={onSubmit}>
-          <input name="q" className="input" placeholder="Rechercher…" defaultValue={params.get("q")||""} />
-        </form>
-        <Link to="/cart" className="btn">Panier ({count})</Link>
-      </div>
-    </header>
+  <div className="container-page bar">
+    <a href="/products" className="brand">Sneakershop</a>
+    <form className="search" onSubmit={onSubmit}>
+      <input name="q" className="input" placeholder="Rechercher…" defaultValue={params.get("q")||""} />
+    </form>
+    <Link to="/cart" className="btn">Panier ({count})</Link>
+  </div>
+</header>
+
   );
 }
+
