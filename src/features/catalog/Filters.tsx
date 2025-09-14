@@ -1,8 +1,8 @@
-export default function Filters(){
+export default function Filters() {
   // ...
   return (
     <div className="filters container-page">
-      <div className="group" style={{flex:1}}>
+      <div className="group" style={{ flex: 1 }}>
         <label>Recherche</label>
         <input className="input" /* ... */ />
       </div>

@@ -25,17 +25,27 @@ export default function ProductListPage() {
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="card">
               <div className="skeleton" style={{ height: 180 }} />
-              <div className="skeleton mt-2" style={{ height: 16, width: "70%", borderRadius: 8 }} />
-              <div className="skeleton mt-2" style={{ height: 14, width: "40%", borderRadius: 8 }} />
+              <div
+                className="skeleton mt-2"
+                style={{ height: 16, width: "70%", borderRadius: 8 }}
+              />
+              <div
+                className="skeleton mt-2"
+                style={{ height: 14, width: "40%", borderRadius: 8 }}
+              />
             </div>
           ))}
         </div>
       )}
 
-      {!isLoading && error && <p className="text-danger">Erreur de chargement.</p>}
+      {!isLoading && error && (
+        <p className="text-danger">Erreur de chargement.</p>
+      )}
 
       <div className="grid-products">
-        {data?.items.map((p) => <ProductCard key={p.id} p={p} />)}
+        {data?.items.map((p) => (
+          <ProductCard key={p.id} p={p} />
+        ))}
       </div>
     </div>
   );

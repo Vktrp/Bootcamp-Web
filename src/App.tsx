@@ -25,17 +25,48 @@ export default function App() {
           <Route path="/product/:id" element={<ProductPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/checkout/success/:orderId" element={<OrderConfirmation />} />
+          <Route
+            path="/checkout/success/:orderId"
+            element={<OrderConfirmation />}
+          />
           <Route path="/login" element={<LoginPage />} />
 
-          <Route path="/seller" element={<RoleGuard action="manageStock"><SellerDashboard /></RoleGuard>} />
-          <Route path="/admin" element={<RoleGuard action="manageUsers"><AdminDashboard /></RoleGuard>} />
-          <Route path="/admin/stock" element={<RoleGuard action="manageStock"><StockTable /></RoleGuard>} />
-          <Route path="/admin/products/new" element={<RoleGuard action="manageUsers"><ProductForm /></RoleGuard>} />
+          <Route
+            path="/seller"
+            element={
+              <RoleGuard action="manageStock">
+                <SellerDashboard />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <RoleGuard action="manageUsers">
+                <AdminDashboard />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/admin/stock"
+            element={
+              <RoleGuard action="manageStock">
+                <StockTable />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/admin/products/new"
+            element={
+              <RoleGuard action="manageUsers">
+                <ProductForm />
+              </RoleGuard>
+            }
+          />
         </Routes>
       </main>
       <Footer />
-        <ConsentBanner />
+      <ConsentBanner />
     </div>
   );
 }
