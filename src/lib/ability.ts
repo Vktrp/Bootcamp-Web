@@ -15,5 +15,5 @@ export function can(role: Role, action: Action): boolean {
     return ["read", "update", "manageStock", "viewOrders"].includes(action);
   if (role === "customer")
     return ["read", "checkout", "viewOrders"].includes(action);
-  return ["read", "checkout"].includes(action); // anon
+  return ["read", "checkout"].includes(action); 
 }

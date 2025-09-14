@@ -1,9 +1,7 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useSelector } from "react-redux";
-import { selectCartCount } from "../features/cart/slice";
+import AccountMenu from "./AccountMenu";
 
 export default function Header() {
-  const count = useSelector(selectCartCount);
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
@@ -19,9 +17,10 @@ export default function Header() {
   return (
     <header className="site-header">
       <div className="container-page bar">
-        <a href="/products" className="brand">
+        <Link to="/products" className="brand">
           Sneakershop
-        </a>
+        </Link>
+
         <form className="search" onSubmit={onSubmit}>
           <input
             name="q"
@@ -30,9 +29,10 @@ export default function Header() {
             defaultValue={params.get("q") || ""}
           />
         </form>
-        <Link to="/cart" className="btn">
-          Panier ({count})
-        </Link>
+
+        <nav style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <AccountMenu />
+        </nav>
       </div>
     </header>
   );

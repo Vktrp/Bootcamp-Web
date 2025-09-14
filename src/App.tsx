@@ -13,6 +13,11 @@ import StockTable from "./features/admin/StockTable";
 import ProductForm from "./features/admin/ProductForm";
 import RoleGuard from "./app/guards/RoleGuard";
 import LoginPage from "./features/auth/LoginPage";
+import AccountPage from "./features/auth/AccountPage";
+import OrderListPage from "./features/orders/OrderListPage";
+import OrderDetailPage from "./features/orders/OrderDetailPage";
+import PrivacyPage from "./features/rgpd/PrivacyPage";
+import FavoritesPage from "./features/favorites/FavoritesPage";
 
 export default function App() {
   return (
@@ -63,6 +68,11 @@ export default function App() {
               </RoleGuard>
             }
           />
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/orders" element={<OrderListPage />} />
+          <Route path="/orders/:id" element={<OrderDetailPage />} />
+          <Route path="/rgpd/privacy" element={<PrivacyPage />} />
+          <Route path="/favorites" element={<FavoritesPage />} />
         </Routes>
       </main>
       <Footer />
