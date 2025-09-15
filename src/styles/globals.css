@@ -488,3 +488,37 @@ label {
   color: var(--muted);
   font-size: 14px;
 }
+.input,
+select,
+textarea {
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.input::placeholder,
+select::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--muted);
+}
+
+.card {
+  color: var(--text);
+}
+
+.dark .btn-outline {
+  color: var(--primary);
+  background: var(--card);
+}
+
+.hero .title {
+  color: var(--text);
+}
+.hero .subtitle {
+  color: var(--muted);
+}
