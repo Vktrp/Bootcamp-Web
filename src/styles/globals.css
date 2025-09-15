@@ -522,3 +522,37 @@ textarea:disabled {
 .hero .subtitle {
   color: var(--muted);
 }
+.menu-item {
+  width: 100%;
+  padding: 10px 10px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text);
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.menu-count {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1118270f;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.empty-box {
+  height: 120px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}

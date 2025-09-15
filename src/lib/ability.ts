@@ -1,19 +1,12 @@
-export type Role = "admin" | "seller" | "customer" | "anon";
-export type Action =
-  | "read"
-  | "create"
-  | "update"
-  | "delete"
-  | "checkout"
-  | "manageStock"
-  | "manageUsers"
-  | "viewOrders";
+export type Role = "customer" | "seller" | "admin";
 
-export function can(role: Role, action: Action): boolean {
-  if (role === "admin") return true;
-  if (role === "seller")
-    return ["read", "update", "manageStock", "viewOrders"].includes(action);
-  if (role === "customer")
-    return ["read", "checkout", "viewOrders"].includes(action);
-  return ["read", "checkout"].includes(action); 
+export const roleAbilities: Record<Role, string[]> = {
+  customer: ["buy", "viewOrders", "viewAccount"],
+  seller: ["viewSellerDashboard", "manageStock"],
+  admin: ["viewAdminDashboard", "manageUsers"], // ⛔ pas "manageStock"
+};
+
+export function can(role: Role | null | undefined, action: string) {
+  if (!role) return false;
+  return roleAbilities[role]?.includes(action) ?? false;
 }

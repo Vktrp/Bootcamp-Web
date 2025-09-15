@@ -1,56 +1,100 @@
-import { supabase } from "../../lib/supabase";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSelector } from "react-redux";
 import { selectUser } from "../auth/slice";
+import { supabase } from "@/lib/supabase";
 
-export default function SellerDashboard() {
-  const user = useSelector(selectUser)!;
-  const [stats, setStats] = useState<{ qty: number; revenue: number } | null>(
-    null
+type SellerStats = {
+  soldPairs: number;
+  returnedPairs: number;
+  viewedPairs: number;
+  revenueCents: number;
+};
+
+async function fetchSellerStats(userId: string): Promise<SellerStats> {
+  // Récupère les lignes vendues par ce seller (si la table existe)
+  const { data: items, error } = await supabase
+    .from("order_items")
+    .select("qty, unit_price_cents")
+    .eq("seller_id", userId);
+
+  if (error || !items) {
+    return { soldPairs: 0, returnedPairs: 0, viewedPairs: 0, revenueCents: 0 };
+  }
+
+  const soldPairs = items.reduce((n: number, it: any) => n + (it.qty ?? 0), 0);
+  const revenueCents = items.reduce(
+    (s: number, it: any) => s + (it.qty ?? 0) * (it.unit_price_cents ?? 0),
+    0
   );
 
-  useEffect(() => {
-    (async () => {
-      const { data, error } = await supabase
-        .from("order_items")
-        .select("qty, price_cents")
-        .eq("seller_id", user.id);
-      if (error) {
-        setStats({ qty: 0, revenue: 0 });
-        return;
-      }
-      const qty = data.reduce((s: any, it: any) => s + it.qty, 0);
-      const revenue = data.reduce(
-        (s: any, it: any) => s + it.qty * it.price_cents,
-        0
-      );
-      setStats({ qty, revenue });
-    })();
-  }, [user.id]);
+  // Si tu ajoutes plus tard des tables returns/views, branche-les ici
+  return { soldPairs, returnedPairs: 0, viewedPairs: 0, revenueCents };
+}
+
+export default function SellerDashboard() {
+  const user = useSelector(selectUser);
+  const userId = user?.id ?? "";
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["sellerStats", userId],
+    queryFn: () =>
+      userId
+        ? fetchSellerStats(userId)
+        : Promise.resolve({
+            soldPairs: 0,
+            returnedPairs: 0,
+            viewedPairs: 0,
+            revenueCents: 0,
+          }),
+    enabled: !!userId,
+  });
+
+  const stats = data ?? {
+    soldPairs: 0,
+    returnedPairs: 0,
+    viewedPairs: 0,
+    revenueCents: 0,
+  };
 
   return (
-    <div className="container-page" style={{ marginTop: 24 }}>
-      <h1 className="title" style={{ fontSize: 32, marginBottom: 16 }}>
-        Espace vendeur
-      </h1>
+    <div className="container-page" style={{ maxWidth: 1100 }}>
+      <h1 className="text-xl font-semibold mb-2">Espace vendeur</h1>
+
       <div
-        style={{
-          display: "grid",
-          gap: 12,
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
-        }}
+        className="grid-products"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
       >
-        <div className="card" style={{ padding: 16 }}>
+        <div className="card">
           <div className="text-sm">Paires vendues</div>
-          <div style={{ fontSize: 32, fontWeight: 900 }}>
-            {stats?.qty ?? "…"}
+          <div style={{ fontSize: 28, fontWeight: 800 }}>
+            {isLoading ? "…" : stats.soldPairs}
           </div>
         </div>
-        <div className="card" style={{ padding: 16 }}>
-          <div className="text-sm">Chiffre d’affaires</div>
-          <div style={{ fontSize: 32, fontWeight: 900 }}>
-            {stats ? (stats.revenue / 100).toFixed(2) + " €" : "…"}
+        <div className="card">
+          <div className="text-sm">Paires retournées</div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>
+            {isLoading ? "…" : stats.returnedPairs}
           </div>
+        </div>
+        <div className="card">
+          <div className="text-sm">Paires regardées</div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>
+            {isLoading ? "…" : stats.viewedPairs}
+          </div>
+        </div>
+        <div className="card">
+          <div className="text-sm">Chiffre d’affaires</div>
+          <div style={{ fontSize: 28, fontWeight: 800 }}>
+            {isLoading ? "…" : (stats.revenueCents / 100).toFixed(2)} €
+          </div>
+        </div>
+      </div>
+
+      {/* Section commandes à préparer */}
+      <h2 className="text-xl font-semibold mt-3">Commandes à préparer</h2>
+      <div className="card" style={{ padding: 16, marginTop: 8 }}>
+        <div className="text-sm">
+          Aucune commande à préparer pour le moment.
         </div>
       </div>
     </div>
