@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { login } from "./api";
+import { signIn } from "./api";
 import { setUser } from "./slice";
 
 export default function LoginPage() {
@@ -17,22 +17,27 @@ export default function LoginPage() {
     setErr(null);
     setLoading(true);
     try {
-      const user = await login({ email, password });
-      dispatch(setUser(user));
+      const profile = await signIn(email, password);
+
+      dispatch(
+        setUser({
+          id: profile.id,
+          email: profile.email,
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          address: profile.address,
+          avatarUrl: profile.avatar_url,
+          role: profile.role,
+        })
+      );
       nav("/");
     } catch (e: any) {
-      // TypeError => souvent “Failed to fetch” (CORS ou serveur down)
-      const msg =
-        e?.name === "TypeError"
-          ? "Impossible de joindre le serveur. Vérifie l’API (port 3001) et le CORS."
-          : e?.message || "Échec de connexion";
-      setErr(msg);
+      setErr(e?.message || "Échec de connexion");
     } finally {
       setLoading(false);
     }
   }
 
-  // Bouton de secours pour continuer à dév sans API
   function devDemo(role: "customer" | "seller" | "admin") {
     dispatch(setUser({ id: "dev", email: `${role}@demo.local`, role } as any));
     nav("/");

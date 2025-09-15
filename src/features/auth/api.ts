@@ -1,39 +1,78 @@
-const API = import.meta.env.VITE_API_URL;
+import { supabase } from "../../lib/supabase";
 
-async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error((await res.text()) || res.statusText);
-  return res.json() as Promise<T>;
-}
-
-export type LoginBody = { email: string; password: string };
-export type User = {
+export type Role = "customer" | "seller" | "admin";
+export type Profile = {
   id: string;
   email: string;
-  role: "customer" | "seller" | "admin";
-  avatarUrl?: string;
+  first_name?: string;
+  last_name?: string;
+  address?: string;
+  avatar_url?: string;
+  role: Role;
 };
 
-export async function login(body: LoginBody): Promise<User> {
-  const res = await fetch(`${API}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include", // cookies de session
-    body: JSON.stringify(body),
-  });
-  return json<User>(res);
+async function getOrCreateProfile(
+  userId: string,
+  email: string
+): Promise<Profile> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .single();
+  if (data) return data as Profile;
+  const insert = { id: userId, email, role: "customer" as Role };
+  const { data: created, error } = await supabase
+    .from("profiles")
+    .insert(insert)
+    .select()
+    .single();
+  if (error) throw error;
+  return created as Profile;
 }
 
-export async function me(): Promise<User | null> {
-  const res = await fetch(`${API}/auth/me`, {
-    credentials: "include",
+export async function signIn(
+  email: string,
+  password: string
+): Promise<Profile> {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
   });
-  if (res.status === 401) return null;
-  return json<User>(res);
+  if (error) throw new Error(error.message);
+  const u = data.user!;
+  return getOrCreateProfile(u.id, u.email!);
 }
 
-export async function logout(): Promise<void> {
-  await fetch(`${API}/auth/logout`, {
-    method: "POST",
-    credentials: "include",
-  });
+export async function getCurrentProfile(): Promise<Profile | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+  if (error && error.code !== "PGRST116") throw error;
+  return (data as Profile) ?? getOrCreateProfile(user.id, user.email!);
+}
+
+export async function signOut(): Promise<void> {
+  await supabase.auth.signOut();
+}
+
+export async function updateProfile(patch: Partial<Profile>): Promise<Profile> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Non connecté");
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(patch)
+    .eq("id", user.id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Profile;
 }

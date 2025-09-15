@@ -1,7 +1,7 @@
 import { ReactNode, useEffect } from "react";
 import { useDispatch } from "react-redux";
 import { setUser } from "../../features/auth/slice";
-import { me } from "../../features/auth/api";
+import { getCurrentProfile } from "../../features/auth/api"; 
 
 /**
  * - Au montage : tente /auth/me (cookie/session ou token côté API)
@@ -16,7 +16,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        const user = await me(); // GET VITE_API_URL/auth/me
+        const user = await getCurrentProfile(); // GET VITE_API_URL/auth/me
         if (!ignore) dispatch(setUser(user));
       } catch {
         if (!ignore) dispatch(setUser(null));
@@ -29,7 +29,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         if (e.newValue === "logout") dispatch(setUser(null));
         // pour "login", on peut relancer me()
         if (e.newValue === "login")
-          me()
+          getCurrentProfile()
             .then((u) => dispatch(setUser(u)))
             .catch(() => dispatch(setUser(null)));
       }

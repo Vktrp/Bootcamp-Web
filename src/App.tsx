@@ -13,7 +13,7 @@ import StockTable from "./features/admin/StockTable";
 import ProductForm from "./features/admin/ProductForm";
 import RoleGuard from "./app/guards/RoleGuard";
 import LoginPage from "./features/auth/LoginPage";
-import AccountPage from "./features/auth/AccountPage";
+import AccountPage from "./features/Account/AccountPage";
 import OrderListPage from "./features/orders/OrderListPage";
 import OrderDetailPage from "./features/orders/OrderDetailPage";
 import PrivacyPage from "./features/rgpd/PrivacyPage";
