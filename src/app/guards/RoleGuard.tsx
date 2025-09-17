@@ -1,7 +1,8 @@
+// src/app/guards/RoleGuard.tsx
 import { ReactNode } from "react";
 import { useSelector } from "react-redux";
 import { selectRole } from "../../features/auth/slice";
-import { can, Action } from "../../lib/ability";
+import { can, type Action } from "../../lib/ability";
 import { Navigate } from "react-router-dom";
 
 export default function RoleGuard({

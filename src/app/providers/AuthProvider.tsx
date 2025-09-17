@@ -1,44 +1,40 @@
-import { ReactNode, useEffect } from "react";
+import { PropsWithChildren, useEffect } from "react";
 import { useDispatch } from "react-redux";
+import { supabase } from "../../lib/supabase";
+import { getCurrentProfile } from "../../features/auth/api"; // ⬅️ change ici
 import { setUser } from "../../features/auth/slice";
-import { getCurrentProfile } from "../../features/auth/api"; 
 
-/**
- * - Au montage : tente /auth/me (cookie/session ou token côté API)
- * - Si succès : place l'utilisateur dans Redux
- * - Écoute les changements "login/logout" d'autres onglets via localStorage
- */
-export default function AuthProvider({ children }: { children: ReactNode }) {
+export default function AuthProvider({ children }: PropsWithChildren) {
   const dispatch = useDispatch();
 
   useEffect(() => {
-    let ignore = false;
+    let disposed = false;
 
     (async () => {
-      try {
-        const user = await getCurrentProfile(); // GET VITE_API_URL/auth/me
-        if (!ignore) dispatch(setUser(user));
-      } catch {
-        if (!ignore) dispatch(setUser(null));
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        try {
+          const u = await getCurrentProfile(); // ⬅️ change ici
+          if (!disposed && u) dispatch(setUser(u));
+        } catch {}
       }
     })();
 
-    // Synchronisation multi-onglets (si tu écris "auth:login"/"auth:logout" dans localStorage)
-    function onStorage(e: StorageEvent) {
-      if (e.key === "auth:event") {
-        if (e.newValue === "logout") dispatch(setUser(null));
-        // pour "login", on peut relancer me()
-        if (e.newValue === "login")
-          getCurrentProfile()
-            .then((u) => dispatch(setUser(u)))
-            .catch(() => dispatch(setUser(null)));
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        try {
+          const u = await getCurrentProfile(); // ⬅️ change ici
+          if (!disposed && u) dispatch(setUser(u));
+        } catch {}
       }
-    }
-    window.addEventListener("storage", onStorage);
+      if (event === "SIGNED_OUT") {
+        if (!disposed) dispatch(setUser(null as any));
+      }
+    });
 
     return () => {
-      ignore = true;
-      window.removeEventListener("storage", onStorage);
+      disposed = true;
+      sub?.subscription?.unsubscribe();
     };
   }, [dispatch]);
 

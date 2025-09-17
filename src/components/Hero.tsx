@@ -1,3 +1,6 @@
+// src/components/Hero.tsx
+import { Link } from "react-router-dom";
+
 export default function Hero() {
   return (
     <section className="hero container-page">
@@ -13,22 +16,28 @@ export default function Hero() {
         </p>
 
         <div className="cta">
+          {/* Bouton "nouveautés" seul sur sa ligne */}
           <div className="cta-row">
-            <a href="/products" className="btn">
+            <Link to="/products" className="btn">
               Voir les nouveautés
-            </a>
+            </Link>
           </div>
 
+          {/* Les 3 collections sur la même ligne */}
           <div className="cta-row group">
-            <a href="/products?category=MEN" className="btn-outline">
+            <Link to="/products?category=men" className="btn-outline">
               Collection Homme
-            </a>
-            <a href="/products?category=WOMEN" className="btn-outline">
+            </Link>
+            <Link to="/products?category=women" className="btn-outline">
               Collection Femme
-            </a>
-            <a href="/products?category=KIDS" className="btn-outline">
+            </Link>
+            <Link
+              to="/products?category=infant
+"
+              className="btn-outline"
+            >
               Collection Enfant
-            </a>
+            </Link>
           </div>
         </div>
       </div>

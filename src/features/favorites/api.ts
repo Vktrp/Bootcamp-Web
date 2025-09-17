@@ -1,60 +1,46 @@
-// src/features/favorites/api.ts
-import { supabase } from "../../lib/supabase"; // ou ../../lib/supabase si tu n'as pas l'alias "@"
+import { supabase } from "@/lib/supabase";
+import { adaptProductCard } from "@/lib/adapters";
 
-// Le type que ta page utilise
-export type FavoriteProduct = {
-  id: string | number;
-  name: string;
-  brand?: string;
-  image?: string;
-  priceCents?: number;
-};
+const KEY = "fav:ids";
 
-/**
- * Récupère les favoris de l'utilisateur connecté depuis Supabase.
- * Schéma attendu côté DB :
- * - table "favorites" avec user_id, product_id
- * - table "products" avec id, name, brand, image, price_cents
- * Et une FK favorites.product_id -> products.id
- */
-export async function listFavorites(): Promise<FavoriteProduct[]> {
-  // Qui est connecté ?
-  const { data: auth } = await supabase.auth.getUser();
-  const userId = auth.user?.id;
-  if (!userId) return [];
-
-  // Jointure Supabase : on récupère le produit lié à chaque favori
-  const { data, error } = await supabase
-    .from("favorites")
-    .select(
-      `
-      id,
-      product:products(
-        id,
-        name,
-        brand,
-        image,
-        price_cents
-      )
-    `
-    )
-    .eq("user_id", userId)
-    .order("id", { ascending: false });
-
-  if (error) {
-    console.error("[favorites] listFavorites error:", error);
+export function getFavoriteIds(): number[] {
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
     return [];
   }
+}
 
-  // Mise en forme pour la page
-  return (data ?? [])
-    .map((row: any) => row.product)
-    .filter(Boolean)
-    .map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      brand: p.brand ?? undefined,
-      image: p.image ?? undefined,
-      priceCents: p.price_cents ?? undefined,
-    }));
+export function setFavoriteIds(ids: number[]) {
+  localStorage.setItem(KEY, JSON.stringify(ids));
+}
+
+export function toggleFavorite(productId: number) {
+  const ids = getFavoriteIds();
+  const next = ids.includes(productId)
+    ? ids.filter((i) => i !== productId)
+    : [...ids, productId];
+  setFavoriteIds(next);
+  return next;
+}
+
+export async function listFavorites() {
+  const ids = getFavoriteIds();
+  if (ids.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("products")
+    .select(
+      `
+      id, name, base_price,
+      brands:brands(name),
+      product_images(image_url, is_primary, display_order),
+      product_variants(price)
+    `
+    )
+    .in("id", ids);
+
+  if (error) throw error;
+  return (data ?? []).map(adaptProductCard);
 }

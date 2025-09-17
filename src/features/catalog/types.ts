@@ -1,4 +1,4 @@
-export type GenderCategory = "kids" | "women" | "men";
+export type GenderCategory = "infant" | "women" | "men";
 
 export interface ProductVariant {
   id: string;
@@ -13,7 +13,7 @@ export interface Product {
   slug: string;
   brand: string;
   priceCents: number;
-  category: "KIDS" | "WOMEN" | "MEN";
+  category: "INFANT" | "WOMEN" | "MEN";
   colorway?: string;
   images: string[];
   variants: ProductVariant[];

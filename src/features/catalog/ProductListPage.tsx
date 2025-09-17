@@ -1,52 +1,83 @@
-import { useSearchParams } from "react-router-dom";
+// src/features/catalog/ProductListPage.tsx
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+
+import Hero from "../../components/Hero";
 import { listProducts } from "./api";
-import ProductCard from "./ProductCard";
-import Hero from "../../components/Hero"; // <-- ajout
+import { formatPrice } from "../../lib/utils";
 
 export default function ProductListPage() {
   const [params] = useSearchParams();
-  const hasFilter = params.toString().length > 0;
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["products", params.toString()],
-    queryFn: () => listProducts(Object.fromEntries(params.entries())),
+  // filtres depuis l'URL
+  const q = params.get("q") || undefined;
+  const categorySlug = params.get("category") || undefined;
+
+  // on montre le Hero seulement si pas de recherche / pas de filtre catégorie
+  const showHero = !q && !categorySlug;
+
+  const {
+    data = [],
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["products", { q, categorySlug }],
+    queryFn: () => listProducts({ q, categorySlug }),
+    initialData: [],
   });
 
+  if (isLoading) {
+    return (
+      <>
+        {showHero && <Hero />}
+        <div className="container-page">Chargement…</div>
+      </>
+    );
+  }
+
+  if (isError) {
+    return (
+      <>
+        {showHero && <Hero />}
+        <div className="container-page text-danger">Erreur de chargement.</div>
+      </>
+    );
+  }
+
   return (
-    <div>
-      {!hasFilter && <Hero />}
+    <>
+      {showHero && <Hero />}
 
-      {/* Si tu as un composant Filters, laisse-le ici, sinon ignore */}
-      {/* <Filters /> */}
+      <div className="container-page">
+        <h1 className="text-xl font-semibold mb-2">Produits</h1>
 
-      {isLoading && (
         <div className="grid-products">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="card">
-              <div className="skeleton" style={{ height: 180 }} />
-              <div
-                className="skeleton mt-2"
-                style={{ height: 16, width: "70%", borderRadius: 8 }}
+          {(data as any[]).map((p: any) => (
+            <Link
+              key={p.id}
+              to={`/product/${p.id}`}
+              className="product-card card"
+            >
+              <img
+                className="thumb"
+                src={
+                  p.image ||
+                  p.images?.[0] ||
+                  "https://via.placeholder.com/800x600"
+                }
+                alt={p.name}
               />
-              <div
-                className="skeleton mt-2"
-                style={{ height: 14, width: "40%", borderRadius: 8 }}
-              />
-            </div>
+              <div className="meta">
+                <div className="name">{p.name}</div>
+                {p.brand && <div className="brand">{p.brand}</div>}
+                <div className="price">
+                  {formatPrice(p.priceCents ?? p.base_price ?? 0)}
+                </div>
+              </div>
+            </Link>
           ))}
         </div>
-      )}
-
-      {!isLoading && error && (
-        <p className="text-danger">Erreur de chargement.</p>
-      )}
-
-      <div className="grid-products">
-        {data?.items.map((p) => (
-          <ProductCard key={p.id} p={p} />
-        ))}
       </div>
-    </div>
+    </>
   );
 }
