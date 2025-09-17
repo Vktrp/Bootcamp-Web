@@ -14,6 +14,25 @@ function eurosFromCents(cents?: number | null) {
   });
 }
 
+/** Découpe "Dark Grey/Black/Wolf Grey" -> ["Dark Grey","Black","Wolf Grey"] */
+function splitColorway(cw?: string | null): string[] {
+  if (!cw) return [];
+  return cw
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Teste si un colorway contient un jeton choisi (insensible à la casse) */
+function colorwayIncludesToken(
+  cw: string | null | undefined,
+  token: string
+): boolean {
+  if (!cw || !token) return false;
+  const tokens = splitColorway(cw).map((t) => t.toLowerCase());
+  return tokens.includes(token.toLowerCase());
+}
+
 export default function ProductPage() {
   const { id } = useParams<{ id: string }>();
   const productId = id ?? "";
@@ -51,21 +70,19 @@ export default function ProductPage() {
     return arr;
   }, [p]);
 
-  // Colorways disponibles
-  const colorways = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          (variants ?? [])
-            .map((v) => ((v as any).colorway || "").trim())
-            .filter(Boolean)
-        )
-      ),
-    [variants]
-  );
+  // Liste des JETONS de couleur (split par "/")
+  const colorTokens = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of variants) {
+      for (const token of splitColorway((v as any).colorway)) {
+        if (token) set.add(token);
+      }
+    }
+    return Array.from(set);
+  }, [variants]);
 
   // États UI
-  const [color, setColor] = useState<string>("");
+  const [color, setColor] = useState<string>(""); // ici on stocke le jeton
   const [size, setSize] = useState<string>("");
   const [fav, setFav] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -76,51 +93,64 @@ export default function ProductPage() {
   const colorRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<HTMLDivElement>(null);
 
-  // Fermer les panneaux si clic extérieur
+  // Ferme si clic à l’extérieur
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (colorRef.current && !colorRef.current.contains(e.target as Node)) {
+      if (colorRef.current && !colorRef.current.contains(e.target as Node))
         setColorOpen(false);
-      }
-      if (sizeRef.current && !sizeRef.current.contains(e.target as Node)) {
+      if (sizeRef.current && !sizeRef.current.contains(e.target as Node))
         setSizeOpen(false);
-      }
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // Tailles dispo pour la couleur sélectionnée (ou toutes si aucune couleur)
+  // Tailles disponibles pour le jeton couleur choisi
   const sizesForColor = useMemo(() => {
     const pool = variants.filter(
-      (v) => !color || (v as any).colorway === color
+      (v) => !color || colorwayIncludesToken((v as any).colorway, color)
     );
     return new Set(pool.map((v) => String(v.size)));
   }, [variants, color]);
+  const hasAnySize = sizesForColor.size > 0;
 
-  // Variant sélectionnée
-  const selectedVariant = useMemo(() => {
-    const exact = variants.find(
-      (v) =>
-        String(v.size) === String(size) &&
-        (!color || (v as any).colorway === color)
-    );
-    if (exact) return exact;
-    const bySize = variants.find((v) => String(v.size) === String(size));
-    if (bySize) return bySize;
-    return variants[0];
-  }, [variants, color, size]);
+  // Variante exacte (taille + jeton)
+  const exactVariant = useMemo(
+    () =>
+      variants.find(
+        (v) =>
+          String(v.size) === String(size) &&
+          (!color || colorwayIncludesToken((v as any).colorway, color))
+      ),
+    [variants, size, color]
+  );
 
-  const displayPriceCents =
-    (selectedVariant as any)?.priceCents ?? p?.priceCents ?? null;
+  // Variante pour l’image (prend une variante qui contient le jeton et a une image)
+  const variantForImage = useMemo(
+    () =>
+      exactVariant ??
+      variants.find(
+        (v) =>
+          color &&
+          colorwayIncludesToken((v as any).colorway, color) &&
+          (v as any).image
+      ) ??
+      variants[0],
+    [variants, exactVariant, color]
+  );
+
+  const displayPriceCents = exactVariant?.priceCents ?? p?.priceCents ?? null;
+  const imageForColor =
+    (variantForImage as any)?.image || (p?.image as string | undefined);
 
   // Init défauts + favori
   useEffect(() => {
-    if (!color && colorways.length) setColor(colorways[0]);
-    if (!size && variants.length) {
-      const firstFromRange =
-        SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ?? "";
-      setSize(firstFromRange || String(variants[0].size || ""));
+    if (!color && colorTokens.length) setColor(colorTokens[0]);
+    if (!size) {
+      const first = (SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
+        SIZE_RANGES[0] ??
+        "") as string;
+      setSize(String(first));
     }
     if (p) {
       const favs = new Set<string>(
@@ -128,18 +158,18 @@ export default function ProductPage() {
       );
       setFav(favs.has(p.id));
     }
-  }, [variants, colorways, sizesForColor, p, color, size]);
+  }, [variants, colorTokens, sizesForColor, p, color, size]);
 
-  // Si la taille courante n'existe pas pour la couleur choisie, on ajuste
+  // Si la taille courante n’existe plus pour le jeton couleur, on ajuste
   useEffect(() => {
-    if (size && !sizesForColor.has(String(size))) {
+    if (size && hasAnySize && !sizesForColor.has(String(size))) {
       const first =
         SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
         Array.from(sizesForColor)[0] ??
         "";
       setSize(String(first || ""));
     }
-  }, [sizesForColor, size]);
+  }, [sizesForColor, hasAnySize, size]);
 
   function toggleFavorite() {
     if (!p) return;
@@ -151,20 +181,18 @@ export default function ProductPage() {
   }
 
   async function addToCart() {
-    if (!p || !selectedVariant) return;
+    if (!p || !exactVariant) return;
     setAdding(true);
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
-      const vColorway: string | null =
-        (selectedVariant as any).colorway ?? null;
+      const vColorway: string | null = (exactVariant as any).colorway ?? null;
 
       if (user) {
         const { error } = await supabase.from("shopping_carts").insert({
           user_id: user.id,
-          product_variant_id: (selectedVariant as any).sku, // adapte si nécessaire
+          product_variant_id: (exactVariant as any).sku,
           quantity: 1,
         });
         if (error) throw error;
@@ -176,36 +204,34 @@ export default function ProductPage() {
           priceCents?: number;
           image?: string;
           qty: number;
-          colorway?: string | null; // accepte null
+          colorway?: string | null;
         };
-
         const key = "cart_local";
         const cart = JSON.parse(
           localStorage.getItem(key) || "[]"
         ) as LocalItem[];
-        const idv = (selectedVariant as any).sku;
+        const idv = (exactVariant as any).sku;
 
         const idx = cart.findIndex(
           (i) =>
             i.variant_id === idv &&
-            i.size === String((selectedVariant as any).size ?? "") &&
+            i.size === String((exactVariant as any).size ?? "") &&
             (i.colorway ?? null) === vColorway
         );
 
-        if (idx >= 0) {
-          cart[idx].qty += 1;
-        } else {
+        if (idx >= 0) cart[idx].qty += 1;
+        else
           cart.push({
             variant_id: idv,
             name: p.name,
-            size: String((selectedVariant as any).size ?? ""),
+            size: String((exactVariant as any).size ?? ""),
             priceCents: displayPriceCents ?? undefined,
             image:
-              (selectedVariant as any).image ?? (p.image as string | undefined),
+              (exactVariant as any).image ?? (p.image as string | undefined),
             colorway: vColorway,
             qty: 1,
           });
-        }
+
         localStorage.setItem(key, JSON.stringify(cart));
       }
     } finally {
@@ -252,9 +278,9 @@ export default function ProductPage() {
         {/* Image à gauche */}
         <div className="card product-media">
           <div className="product-media-frame">
-            {(selectedVariant as any)?.image || p.image ? (
+            {imageForColor ? (
               <img
-                src={(selectedVariant as any)?.image || (p.image as string)}
+                src={imageForColor}
                 alt={p.name}
                 className="product-media-img"
                 loading="eager"
@@ -276,8 +302,8 @@ export default function ProductPage() {
             {eurosFromCents(displayPriceCents)}
           </div>
 
-          {/* Couleur */}
-          {colorways.length > 0 && (
+          {/* Couleur (jetons séparés par "/") */}
+          {colorTokens.length > 0 && (
             <div className="mt-4">
               <label>Couleur</label>
               <div className="size-select" ref={colorRef}>
@@ -291,10 +317,9 @@ export default function ProductPage() {
                   <span>{color || "Choisir"}</span>
                   <span className="caret">▾</span>
                 </button>
-
                 {colorOpen && (
                   <div className="size-panel" role="listbox">
-                    {colorways.map((cw) => {
+                    {colorTokens.map((cw) => {
                       const isSelected = color === cw;
                       return (
                         <button
@@ -318,7 +343,7 @@ export default function ProductPage() {
             </div>
           )}
 
-          {/* Taille (liée à la couleur) */}
+          {/* Taille (liée au jeton) */}
           <div className="mt-4">
             <label>Taille (EU)</label>
             <div className="size-select" ref={sizeRef}>
@@ -332,11 +357,12 @@ export default function ProductPage() {
                 <span>{size || "Choisir"}</span>
                 <span className="caret">▾</span>
               </button>
-
               {sizeOpen && (
                 <div className="size-panel" role="listbox">
                   {SIZE_RANGES.map((s) => {
-                    const isAvailable = sizesForColor.has(String(s));
+                    const isAvailable = hasAnySize
+                      ? sizesForColor.has(String(s))
+                      : true;
                     const isSelected = String(size) === String(s);
                     return (
                       <button
@@ -347,9 +373,9 @@ export default function ProductPage() {
                           (isSelected ? " selected" : "") +
                           (!isAvailable ? " disabled" : "")
                         }
-                        disabled={!isAvailable}
+                        disabled={!isAvailable && hasAnySize}
                         onClick={() => {
-                          if (!isAvailable) return;
+                          if (!isAvailable && hasAnySize) return;
                           setSize(String(s));
                           setSizeOpen(false);
                         }}
@@ -364,14 +390,9 @@ export default function ProductPage() {
           </div>
 
           <div className="text-sm mt-2">
-            {(selectedVariant as any)?.sku && (
-              <>SKU&nbsp;: {(selectedVariant as any).sku}</>
-            )}
-            {(selectedVariant as any)?.colorway && (
-              <>
-                {" • "}
-                <span>Couleur&nbsp;: {(selectedVariant as any).colorway}</span>
-              </>
+            {exactVariant?.sku && <>SKU&nbsp;: {exactVariant.sku}</>}
+            {(exactVariant as any)?.colorway && (
+              <> • Couleur: {(exactVariant as any).colorway}</>
             )}
           </div>
 
@@ -379,11 +400,10 @@ export default function ProductPage() {
             <button
               className="btn"
               onClick={addToCart}
-              disabled={!selectedVariant || adding}
+              disabled={!exactVariant || adding}
             >
               {adding ? "Ajout..." : "Ajouter au panier"}
             </button>
-
             <button
               className={`btn-outline fav-btn${fav ? " active" : ""}`}
               onClick={toggleFavorite}

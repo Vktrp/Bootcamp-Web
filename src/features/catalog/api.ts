@@ -46,13 +46,13 @@ function genderPattern(slug?: string): string | null {
   return null;
 }
 
-/** Liste des produits (filtre plein-texte + filtre catégorie via gender de product_variant) */
+/** Liste des produits (recherche + filtre catégorie via gender de product_variant) */
 export async function listProducts({
   q,
   categorySlug,
 }: ListArgs): Promise<Product[]> {
   try {
-    // 1) Filtrer par genre (depuis product_variant.gender) -> silhouettes
+    // 1) Filtrer par genre → silhouettes autorisées
     let silhouettes: string[] | null = null;
     const pat = genderPattern(categorySlug);
     if (pat) {
@@ -63,12 +63,7 @@ export async function listProducts({
         .limit(2000);
 
       if (pv.error) {
-        console.error("[listProducts] product_variant error:", {
-          message: pv.error.message,
-          details: pv.error.details,
-          hint: pv.error.hint,
-          code: pv.error.code,
-        });
+        console.error("[listProducts] product_variant error:", pv.error);
       } else if (pv.data?.length) {
         silhouettes = Array.from(
           new Set(pv.data.map((r: any) => r.silhouette).filter(Boolean))
@@ -95,23 +90,7 @@ export async function listProducts({
     const res = await qy;
 
     if (res.error) {
-      console.error("[listProducts] product error:", {
-        message: res.error.message,
-        details: res.error.details,
-        hint: res.error.hint,
-        code: res.error.code,
-      });
-      // petit diag
-      const retry = await supabase.from("product").select("*").limit(3);
-      console.log("[listProducts] retry * sample rows:", retry.data);
-      if (retry.error) {
-        console.error("[listProducts] retry * error:", {
-          message: retry.error.message,
-          details: retry.error.details,
-          hint: retry.error.hint,
-          code: retry.error.code,
-        });
-      }
+      console.error("[listProducts] product error:", res.error);
       return [];
     }
 
@@ -132,49 +111,50 @@ export async function getProduct(id: string): Promise<Product> {
     .maybeSingle();
 
   if (pr.error || !pr.data) {
-    console.error("[getProduct] product error:", {
-      message: pr.error?.message,
-      details: pr.error?.details,
-      hint: pr.error?.hint,
-      code: pr.error?.code,
-    });
+    console.error("[getProduct] product error:", pr.error);
     throw new Error("Product not found");
   }
 
   const prod = mapRowToProduct(pr.data);
 
-  // 1) variantes par silhouette
-  let vr = await supabase
+  // ============= Variantes =============
+  // 1) par silhouette
+  const { data: rowsBySilhouette, error: errBySilhouette } = await supabase
     .from("product_variant")
-    .select("variant_id,sku,size:size_eu,retailPrice,image,silhouette,name")
+    .select(
+      "variant_id, sku, size:size_eu, retailPrice, image, silhouette, name, colorway"
+    )
     .eq("silhouette", pr.data.silhouette)
     .order("size_eu", { ascending: true })
     .limit(1000);
 
   // 2) fallback par name ~ silhouette si rien trouvé
-  if (!vr.data || !vr.data.length) {
-    vr = await supabase
+  let rows = rowsBySilhouette ?? [];
+  let firstError = errBySilhouette || null;
+
+  if (!rows.length) {
+    const { data: rowsByName, error: errByName } = await supabase
       .from("product_variant")
-      .select("variant_id,sku,size:size_eu,retailPrice,image,silhouette,name")
+      .select(
+        "variant_id, sku, size:size_eu, retailPrice, image, silhouette, name, colorway"
+      )
       .ilike("name", `%${pr.data.silhouette}%`)
       .order("size_eu", { ascending: true })
       .limit(1000);
+
+    rows = rowsByName ?? [];
+    if (!firstError) firstError = errByName || null;
   }
 
-  if (vr.error) {
-    console.error("[getProduct] product_variant error:", {
-      message: vr.error.message,
-      details: vr.error.details,
-      hint: vr.error.hint,
-      code: vr.error.code,
-    });
+  if (firstError) {
+    console.error("[getProduct] product_variant error:", firstError);
   }
 
   // 3) dédoublonnage (variant_id/sku + size)
   const seen = new Set<string>();
   const variants: Variant[] = [];
 
-  for (const v of vr.data ?? []) {
+  for (const v of rows) {
     const sku: string = (v as any).sku ?? (v as any).variant_id ?? "";
     const size: string | undefined = (v as any).size ?? undefined;
     const uniq = `${(v as any).variant_id ?? sku}|${size ?? ""}`;
@@ -192,10 +172,11 @@ export async function getProduct(id: string): Promise<Product> {
       priceCents,
       image: (v as any).image ?? undefined,
       stock: undefined,
+      colorway: (v as any).colorway ?? null, // ← important pour le sélecteur Couleur
     });
   }
 
-  // 4) tri par taille EU (numérique si possible) — typé pour TS
+  // 4) tri par taille EU
   const byEuSize = (a: Variant, b: Variant): number => {
     const pa = parseFloat(String(a.size ?? "").replace(",", "."));
     const pb = parseFloat(String(b.size ?? "").replace(",", "."));
