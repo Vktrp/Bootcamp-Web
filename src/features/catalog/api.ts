@@ -8,6 +8,7 @@ export type Variant = {
   stock?: number; // (pas en base pour l’instant)
   priceCents?: number; // retailPrice * 100 si présent, sinon prix produit
   image?: string;
+  colorway?: string | null;
 };
 
 /** Produit provenant de product */

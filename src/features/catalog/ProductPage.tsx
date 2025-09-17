@@ -1,9 +1,10 @@
 // src/features/catalog/ProductPage.tsx
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getProduct, type Product, type Variant } from "./api";
 import { supabase } from "../../lib/supabase";
+import { SIZE_RANGES } from "../../lib/sizes";
 
 function eurosFromCents(cents?: number | null) {
   if (cents == null) return "—";
@@ -20,18 +21,19 @@ export default function ProductPage() {
   const {
     data: p,
     isLoading,
-    error,
+    isError,
   } = useQuery<Product>({
     queryKey: ["product", productId],
     queryFn: () => getProduct(productId),
     enabled: Boolean(productId),
   });
 
+  // Variantes dédoublonnées + tri par taille
   const variants: Variant[] = useMemo(() => {
     const seen = new Set<string>();
     const arr: Variant[] = [];
     for (const v of p?.variants ?? []) {
-      const k = `${v.sku}|${v.size ?? ""}`;
+      const k = `${v.sku}|${v.size ?? ""}|${(v as any).colorway ?? ""}`;
       if (seen.has(k)) continue;
       seen.add(k);
       arr.push(v);
@@ -49,28 +51,97 @@ export default function ProductPage() {
     return arr;
   }, [p]);
 
+  // Colorways disponibles
+  const colorways = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (variants ?? [])
+            .map((v) => ((v as any).colorway || "").trim())
+            .filter(Boolean)
+        )
+      ),
+    [variants]
+  );
+
+  // États UI
+  const [color, setColor] = useState<string>("");
   const [size, setSize] = useState<string>("");
   const [fav, setFav] = useState(false);
   const [adding, setAdding] = useState(false);
 
+  // Dropdowns compacts
+  const [colorOpen, setColorOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const colorRef = useRef<HTMLDivElement>(null);
+  const sizeRef = useRef<HTMLDivElement>(null);
+
+  // Fermer les panneaux si clic extérieur
   useEffect(() => {
-    if (variants.length && !size) setSize(String(variants[0].size || ""));
+    function onDocClick(e: MouseEvent) {
+      if (colorRef.current && !colorRef.current.contains(e.target as Node)) {
+        setColorOpen(false);
+      }
+      if (sizeRef.current && !sizeRef.current.contains(e.target as Node)) {
+        setSizeOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  // Tailles dispo pour la couleur sélectionnée (ou toutes si aucune couleur)
+  const sizesForColor = useMemo(() => {
+    const pool = variants.filter(
+      (v) => !color || (v as any).colorway === color
+    );
+    return new Set(pool.map((v) => String(v.size)));
+  }, [variants, color]);
+
+  // Variant sélectionnée
+  const selectedVariant = useMemo(() => {
+    const exact = variants.find(
+      (v) =>
+        String(v.size) === String(size) &&
+        (!color || (v as any).colorway === color)
+    );
+    if (exact) return exact;
+    const bySize = variants.find((v) => String(v.size) === String(size));
+    if (bySize) return bySize;
+    return variants[0];
+  }, [variants, color, size]);
+
+  const displayPriceCents =
+    (selectedVariant as any)?.priceCents ?? p?.priceCents ?? null;
+
+  // Init défauts + favori
+  useEffect(() => {
+    if (!color && colorways.length) setColor(colorways[0]);
+    if (!size && variants.length) {
+      const firstFromRange =
+        SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ?? "";
+      setSize(firstFromRange || String(variants[0].size || ""));
+    }
     if (p) {
       const favs = new Set<string>(
         JSON.parse(localStorage.getItem("favs") || "[]")
       );
       setFav(favs.has(p.id));
     }
-  }, [variants, size, p]);
+  }, [variants, colorways, sizesForColor, p, color, size]);
 
-  const selectedVariant = useMemo(
-    () => variants.find((v) => String(v.size) === String(size)),
-    [variants, size]
-  );
-  const displayPriceCents =
-    selectedVariant?.priceCents ?? p?.priceCents ?? null;
+  // Si la taille courante n'existe pas pour la couleur choisie, on ajuste
+  useEffect(() => {
+    if (size && !sizesForColor.has(String(size))) {
+      const first =
+        SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
+        Array.from(sizesForColor)[0] ??
+        "";
+      setSize(String(first || ""));
+    }
+  }, [sizesForColor, size]);
 
-  async function toggleFavorite() {
+  function toggleFavorite() {
     if (!p) return;
     const key = "favs";
     const favs = new Set<string>(JSON.parse(localStorage.getItem(key) || "[]"));
@@ -86,10 +157,14 @@ export default function ProductPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
+      const vColorway: string | null =
+        (selectedVariant as any).colorway ?? null;
+
       if (user) {
         const { error } = await supabase.from("shopping_carts").insert({
           user_id: user.id,
-          product_variant_id: selectedVariant.sku, // ou variant_id selon ton choix
+          product_variant_id: (selectedVariant as any).sku, // adapte si nécessaire
           quantity: 1,
         });
         if (error) throw error;
@@ -101,25 +176,36 @@ export default function ProductPage() {
           priceCents?: number;
           image?: string;
           qty: number;
+          colorway?: string | null; // accepte null
         };
+
         const key = "cart_local";
         const cart = JSON.parse(
           localStorage.getItem(key) || "[]"
         ) as LocalItem[];
-        const idv = selectedVariant.sku;
+        const idv = (selectedVariant as any).sku;
+
         const idx = cart.findIndex(
-          (i) => i.variant_id === idv && i.size === selectedVariant.size
+          (i) =>
+            i.variant_id === idv &&
+            i.size === String((selectedVariant as any).size ?? "") &&
+            (i.colorway ?? null) === vColorway
         );
-        if (idx >= 0) cart[idx].qty += 1;
-        else
+
+        if (idx >= 0) {
+          cart[idx].qty += 1;
+        } else {
           cart.push({
             variant_id: idv,
             name: p.name,
-            size: selectedVariant.size,
+            size: String((selectedVariant as any).size ?? ""),
             priceCents: displayPriceCents ?? undefined,
-            image: selectedVariant.image ?? p.image,
+            image:
+              (selectedVariant as any).image ?? (p.image as string | undefined),
+            colorway: vColorway,
             qty: 1,
           });
+        }
         localStorage.setItem(key, JSON.stringify(cart));
       }
     } finally {
@@ -129,32 +215,31 @@ export default function ProductPage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-6xl px-4 py-10 text-slate-200">
-        <div className="grid grid-cols-1 md:grid-cols-[minmax(320px,560px)_1fr] gap-10">
-          <div className="h-[420px] rounded-2xl bg-slate-800" />
-          <div className="space-y-4">
-            <div className="h-8 w-72 bg-slate-700 rounded" />
-            <div className="h-6 w-36 bg-slate-700 rounded" />
-            <div className="h-8 w-40 bg-slate-700 rounded" />
+      <div className="container-page">
+        <div className="product-layout">
+          <div className="skeleton" style={{ height: 420, borderRadius: 16 }} />
+          <div>
+            <div
+              className="skeleton"
+              style={{ height: 32, width: 280, borderRadius: 8 }}
+            />
+            <div
+              className="mt-2 skeleton"
+              style={{ height: 20, width: 180, borderRadius: 8 }}
+            />
           </div>
         </div>
       </div>
     );
   }
 
-  if (error || !p) {
+  if (isError || !p) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-16 text-slate-200">
-        <p>Produit introuvable.</p>
-        <div className="mt-6 flex gap-3">
-          <button
-            className="px-4 py-2 rounded-xl bg-slate-700"
-            onClick={() => history.back()}
-          >
-            ← Retour
-          </button>
-          <Link to="/products" className="px-4 py-2 rounded-xl bg-slate-700">
-            Tous les produits
+      <div className="container-page">
+        <p className="text-danger">Produit introuvable.</p>
+        <div className="mt-3">
+          <Link to="/products" className="btn-outline">
+            ← Retour aux produits
           </Link>
         </div>
       </div>
@@ -162,97 +247,146 @@ export default function ProductPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 text-slate-100">
-      {/* 2 colonnes dès md: image à gauche (largeur bornée), fiche à droite */}
-      <div className="grid grid-cols-1 md:grid-cols-[minmax(320px,560px)_1fr] gap-10">
-        {/* COL GAUCHE — visuel cadré */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-3">
-          <div
-            className="mx-auto w-full overflow-hidden"
-            style={{ aspectRatio: "4 / 3", maxWidth: 560 }} // largeur max ≈ StyleVana
-          >
-            {selectedVariant?.image || p.image ? (
+    <div className="container-page">
+      <div className="product-layout">
+        {/* Image à gauche */}
+        <div className="card product-media">
+          <div className="product-media-frame">
+            {(selectedVariant as any)?.image || p.image ? (
               <img
-                src={selectedVariant?.image || (p.image as string)}
+                src={(selectedVariant as any)?.image || (p.image as string)}
                 alt={p.name}
-                className="h-full w-full object-contain"
-                style={{ maxHeight: 460 }} // hauteur bornée
+                className="product-media-img"
                 loading="eager"
               />
             ) : (
-              <div className="h-full w-full flex items-center justify-center text-slate-500">
-                Pas d’image
-              </div>
+              <div className="empty-box">Pas d’image</div>
             )}
           </div>
         </div>
 
-        {/* COL DROITE — fiche produit (comme StyleVana) */}
-        <div className="md:sticky md:top-24 space-y-6">
-          {/* Titre + marque en haut */}
-          <div>
-            <h1 className="text-3xl font-semibold">{p.name}</h1>
-            <p className="text-slate-400">{p.brand || "—"}</p>
+        {/* Fiche à droite */}
+        <div className="product-info">
+          <div className="product-title">
+            <h1 className="title-xl">{p.name}</h1>
+            <div className="text-sm">{p.brand || "—"}</div>
           </div>
 
-          {/* Prix bien visible */}
-          <div className="text-3xl font-medium">
+          <div className="price-xl mt-3">
             {eurosFromCents(displayPriceCents)}
           </div>
 
-          {/* Tailles */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-2">
-              Taille (EU)
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {variants.length ? (
-                variants.map((v, i) => {
-                  const selected = String(v.size) === String(size);
-                  return (
-                    <button
-                      key={`${v.sku}-${v.size}-${i}`}
-                      onClick={() => setSize(String(v.size || ""))}
-                      className={[
-                        "min-w-[44px] px-3 py-2 rounded-xl border transition text-sm",
-                        selected
-                          ? "border-indigo-400 bg-indigo-500/10"
-                          : "border-slate-700 bg-slate-800 hover:bg-slate-700",
-                      ].join(" ")}
-                    >
-                      {v.size ?? "—"}
-                    </button>
-                  );
-                })
-              ) : (
-                <p className="text-slate-400 text-sm">Pas de variantes</p>
+          {/* Couleur */}
+          {colorways.length > 0 && (
+            <div className="mt-4">
+              <label>Couleur</label>
+              <div className="size-select" ref={colorRef}>
+                <button
+                  type="button"
+                  className="size-trigger"
+                  onClick={() => setColorOpen((o) => !o)}
+                  aria-haspopup="listbox"
+                  aria-expanded={colorOpen}
+                >
+                  <span>{color || "Choisir"}</span>
+                  <span className="caret">▾</span>
+                </button>
+
+                {colorOpen && (
+                  <div className="size-panel" role="listbox">
+                    {colorways.map((cw) => {
+                      const isSelected = color === cw;
+                      return (
+                        <button
+                          key={cw}
+                          type="button"
+                          className={
+                            "size-option" + (isSelected ? " selected" : "")
+                          }
+                          onClick={() => {
+                            setColor(cw);
+                            setColorOpen(false);
+                          }}
+                        >
+                          {cw}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Taille (liée à la couleur) */}
+          <div className="mt-4">
+            <label>Taille (EU)</label>
+            <div className="size-select" ref={sizeRef}>
+              <button
+                type="button"
+                className="size-trigger"
+                onClick={() => setSizeOpen((o) => !o)}
+                aria-haspopup="listbox"
+                aria-expanded={sizeOpen}
+              >
+                <span>{size || "Choisir"}</span>
+                <span className="caret">▾</span>
+              </button>
+
+              {sizeOpen && (
+                <div className="size-panel" role="listbox">
+                  {SIZE_RANGES.map((s) => {
+                    const isAvailable = sizesForColor.has(String(s));
+                    const isSelected = String(size) === String(s);
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        className={
+                          "size-option" +
+                          (isSelected ? " selected" : "") +
+                          (!isAvailable ? " disabled" : "")
+                        }
+                        disabled={!isAvailable}
+                        onClick={() => {
+                          if (!isAvailable) return;
+                          setSize(String(s));
+                          setSizeOpen(false);
+                        }}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
 
-          {/* Infos variant */}
-          <div className="text-sm text-slate-400">
-            {selectedVariant?.sku && <p>SKU: {selectedVariant.sku}</p>}
+          <div className="text-sm mt-2">
+            {(selectedVariant as any)?.sku && (
+              <>SKU&nbsp;: {(selectedVariant as any).sku}</>
+            )}
+            {(selectedVariant as any)?.colorway && (
+              <>
+                {" • "}
+                <span>Couleur&nbsp;: {(selectedVariant as any).colorway}</span>
+              </>
+            )}
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-3">
+          <div className="actions mt-4">
             <button
+              className="btn"
               onClick={addToCart}
               disabled={!selectedVariant || adding}
-              className="px-5 py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 disabled:opacity-50"
             >
               {adding ? "Ajout..." : "Ajouter au panier"}
             </button>
 
             <button
+              className={`btn-outline fav-btn${fav ? " active" : ""}`}
               onClick={toggleFavorite}
-              className={[
-                "px-4 py-3 rounded-2xl border",
-                fav
-                  ? "border-pink-400 bg-pink-500/10"
-                  : "border-slate-700 bg-slate-800 hover:bg-slate-700",
-              ].join(" ")}
             >
               {fav ? "♥ Favori" : "♡ Favori"}
             </button>

@@ -18,7 +18,6 @@ import OrderListPage from "./features/orders/OrderListPage";
 import OrderDetailPage from "./features/orders/OrderDetailPage";
 import PrivacyPage from "./features/rgpd/PrivacyPage";
 import FavoritesPage from "./features/favorites/FavoritesPage";
-import ProductDetail from "./pages/ProductDetail";
 
 export default function App() {
   return (
@@ -31,7 +30,6 @@ export default function App() {
           <Route path="/product/:id" element={<ProductPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/product/:slugOrName" element={<ProductDetail />} />
           <Route
             path="/checkout/success/:orderId"
             element={<OrderConfirmation />}

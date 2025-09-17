@@ -1,81 +1,76 @@
-import {
+import React, {
   createContext,
-  ReactNode,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
 
-type ThemePref = "light" | "dark" | "system";
-type ThemeCtx = {
-  pref: ThemePref;
-  setPref: (t: ThemePref) => void;
-  effective: "light" | "dark";
+type Theme = "light" | "dark" | "system";
+
+type Ctx = {
+  theme: Theme;
+  isDark: boolean;
+  setTheme: (t: Theme) => void;
+  toggle: () => void;
 };
 
-const ThemeContext = createContext<ThemeCtx | null>(null);
+const ThemeContext = createContext<Ctx | undefined>(undefined);
 
-function getSystemDark() {
-  return (
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
-}
-function applyThemeClass(effective: "light" | "dark") {
-  const root = document.documentElement;
-  root.classList.remove("light", "dark");
-  root.classList.add(effective);
+const KEY = "theme";
+
+function systemPrefersDark() {
+  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false;
 }
 
-/**
- * - Stocke la préférence ("light" | "dark" | "system") dans localStorage
- * - Calcule le thème effectif (si "system" => suit l’OS et réagit aux changements)
- * - Applique la classe "light" ou "dark" sur <html> pour stylage global
- */
-export default function ThemeProvider({ children }: { children: ReactNode }) {
-  const [pref, setPref] = useState<ThemePref>(
-    () => (localStorage.getItem("theme:pref") as ThemePref) || "system"
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(
+    () => (localStorage.getItem(KEY) as Theme) || "system"
   );
-  const [systemDark, setSystemDark] = useState<boolean>(() => getSystemDark());
 
-  // Observe les changements système quand pref === "system"
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    function onChange(e: MediaQueryListEvent) {
-      setSystemDark(e.matches);
-    }
-    mq.addEventListener?.("change", onChange);
-    return () => mq.removeEventListener?.("change", onChange);
-  }, []);
+  const isDark = useMemo(
+    () => theme === "dark" || (theme === "system" && systemPrefersDark()),
 
-  // Persistance
-  useEffect(() => {
-    localStorage.setItem("theme:pref", pref);
-  }, [pref]);
-
-  const effective: "light" | "dark" = useMemo(() => {
-    if (pref === "light") return "light";
-    if (pref === "dark") return "dark";
-    return systemDark ? "dark" : "light";
-  }, [pref, systemDark]);
-
-  // Application classe <html>
-  useEffect(() => {
-    applyThemeClass(effective);
-  }, [effective]);
-
-  const value = useMemo<ThemeCtx>(
-    () => ({ pref, setPref, effective }),
-    [pref, effective]
+    [theme]
   );
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    root.classList.toggle("dark", isDark);
+
+    localStorage.setItem(KEY, theme);
+  }, [isDark, theme]);
+
+  // suivis des changements système si mode "system"
+
+  useEffect(() => {
+    if (theme !== "system") return;
+
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const onChange = () => {
+      document.documentElement.classList.toggle("dark", mql.matches);
+    };
+
+    mql.addEventListener?.("change", onChange);
+
+    return () => mql.removeEventListener?.("change", onChange);
+  }, [theme]);
+
+  const toggle = () => setTheme(isDark ? "light" : "dark");
+
   return (
-    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    <ThemeContext.Provider value={{ theme, isDark, setTheme, toggle }}>
+      {children}
+    </ThemeContext.Provider>
   );
 }
 
 export function useTheme() {
   const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+
+  if (!ctx) throw new Error("useTheme must be used inside <ThemeProvider>");
+
   return ctx;
 }

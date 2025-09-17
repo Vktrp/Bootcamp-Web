@@ -1,5 +1,6 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AccountMenu from "./AccountMenu";
+import ThemeSwitch from "./ThemeSwitch";
 
 export default function Header() {
   const [params] = useSearchParams();
@@ -31,6 +32,9 @@ export default function Header() {
         </form>
 
         <nav style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <nav style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <ThemeSwitch /> {/* 👈 le bouton thème est ici */}
+          </nav>
           <AccountMenu />
         </nav>
       </div>
