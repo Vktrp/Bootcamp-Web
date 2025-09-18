@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { listUsers, type UserRow } from "./api";
 
+/* ───── Badges ───── */
 function Badge({
   kind,
   children,
@@ -9,39 +10,37 @@ function Badge({
   children: React.ReactNode;
 }) {
   const styles: Record<string, React.CSSProperties> = {
-    ok: { background: "rgba(34,197,94,.12)", color: "rgb(34,197,94)" },
-    warn: { background: "rgba(234,179,8,.12)", color: "rgb(234,179,8)" },
-    error: { background: "rgba(239,68,68,.12)", color: "rgb(239,68,68)" },
-    info: { background: "rgba(59,130,246,.12)", color: "rgb(59,130,246)" },
+    ok: { background: "rgba(34,197,94,.18)", color: "rgb(187,247,208)" },
+    warn: { background: "rgba(234,179,8,.22)", color: "rgb(253,230,138)" },
+    error: { background: "rgba(239,68,68,.20)", color: "rgb(254,202,202)" },
+    info: { background: "rgba(59,130,246,.20)", color: "rgb(191,219,254)" },
   };
   return (
     <span
-      className="px-3 py-1 text-xs rounded-full"
       style={{
         ...styles[kind],
-        border: "1px solid currentColor",
-        borderColor: styles[kind].color as string,
+        padding: "3px 8px",
+        fontSize: 11,
+        borderRadius: 8,
+        fontWeight: 800,
+        lineHeight: 1,
         whiteSpace: "nowrap",
+        display: "inline-block",
       }}
     >
       {children}
     </span>
   );
 }
-
-function roleBadge(role?: string | null) {
+const roleBadge = (role?: string | null) => {
   const r = (role ?? "").toLowerCase();
   if (r === "admin") return <Badge kind="info">admin</Badge>;
   if (r === "seller") return <Badge kind="warn">seller</Badge>;
   return <Badge kind="ok">customer</Badge>;
-}
-function activeBadge(active?: boolean | null) {
-  return active ? (
-    <Badge kind="ok">oui</Badge>
-  ) : (
-    <Badge kind="error">non</Badge>
-  );
-}
+};
+const activeBadge = (active?: boolean | null) =>
+  active ? <Badge kind="ok">oui</Badge> : <Badge kind="error">non</Badge>;
+
 function fmtDate(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -54,13 +53,13 @@ function fmtDate(iso?: string | null) {
   });
 }
 
+/* ───── Types & tri ───── */
 type SortKey = "created_at" | "email" | "role";
 
 export default function UsersTable() {
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // UI: recherche & tri
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortKey>("created_at");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
@@ -108,22 +107,48 @@ export default function UsersTable() {
 
   if (loading) return <p className="container-page">Chargement…</p>;
 
+  // alignements (mêmes règles que le tableau des commandes)
+  const thLeft = { textAlign: "left" as const };
+  const thRight = { textAlign: "right" as const };
+  const tdLeft = {
+    textAlign: "left" as const,
+    verticalAlign: "middle" as const,
+  };
+  const tdCenter = {
+    textAlign: "center" as const,
+    verticalAlign: "middle" as const,
+  };
+  const tdRight = {
+    textAlign: "right" as const,
+    verticalAlign: "middle" as const,
+  };
+  // ajoute cette constante avec les autres
+  const thCenter = { textAlign: "center" as const };
+
   return (
     <div className="container-page" style={{ maxWidth: 1200 }}>
+      {/* styles locaux, calqués sur l’UI “commandes” */}
+      <style>{`
+        .admin-table { font-variant-numeric: tabular-nums; }
+        .admin-table thead th {
+          font-weight: 700;
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        .admin-table tbody td {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(255,255,255,.05);
+        }
+        .admin-table tbody tr:last-child td { border-bottom: 0; }
+        .admin-table th, .admin-table td { white-space: nowrap; }
+        .users-toolbar { padding: 16px; margin-bottom: 16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+        .table-frame { border-radius: 14px; }
+      `}</style>
+
       <h1 className="text-2xl font-semibold mb-4">Utilisateurs</h1>
 
-      {/* Barre d’outils aérée */}
-      <div
-        className="card"
-        style={{
-          padding: 16,
-          marginBottom: 16,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 12,
-          alignItems: "center",
-        }}
-      >
+      {/* Barre d’outils */}
+      <div className="card users-toolbar">
         <input
           className="input"
           placeholder="Rechercher (email, nom, rôle)…"
@@ -146,6 +171,7 @@ export default function UsersTable() {
             className="btn-outline"
             onClick={() => setDir((d) => (d === "asc" ? "desc" : "asc"))}
             style={{ height: 40 }}
+            aria-label="Inverser l'ordre"
           >
             {dir === "asc" ? "↑" : "↓"}
           </button>
@@ -155,103 +181,83 @@ export default function UsersTable() {
         </div>
       </div>
 
-      {/* Table lisible avec grands espacements */}
-      <div
-        className="overflow-auto rounded-2xl"
-        style={{ border: "1px solid rgba(255,255,255,.08)" }}
-      >
-        <table
-          className="min-w-full"
-          style={{
-            fontSize: 14,
-            lineHeight: 1.6,
-            borderCollapse: "separate",
-            borderSpacing: 0,
-          }}
-        >
-          <thead
-            style={{
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-              background: "rgba(255,255,255,.04)",
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            <tr style={{ textAlign: "left" }}>
-              <th className="p-4">ID</th>
-              <th className="p-4" style={{ width: 300 }}>
-                Email
-              </th>
-              <th className="p-4" style={{ width: 260 }}>
-                Nom
-              </th>
-              <th className="p-4" style={{ width: 140 }}>
-                Rôle
-              </th>
-              <th className="p-4" style={{ width: 120 }}>
-                Actif
-              </th>
-              <th className="p-4" style={{ width: 200 }}>
-                Créé le
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((u, i) => (
-              <tr
-                key={u.id}
-                style={{
-                  background:
-                    i % 2 === 0 ? "rgba(255,255,255,.02)" : "transparent",
-                  borderTop: "1px solid rgba(255,255,255,.06)",
-                }}
-                className="hover:bg-white/5 transition-colors"
-              >
-                <td
-                  className="p-4 font-mono opacity-80"
-                  style={{ whiteSpace: "nowrap" }}
-                >
-                  {u.id}
-                </td>
-                <td className="p-4" style={{ maxWidth: 300 }}>
-                  <div
-                    title={u.email ?? ""}
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {u.email ?? "—"}
-                  </div>
-                </td>
-                <td className="p-4" style={{ maxWidth: 260 }}>
-                  <div
-                    title={`${u.first_name ?? ""} ${u.last_name ?? ""}`}
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {(u.first_name ?? "—") + " " + (u.last_name ?? "")}
-                  </div>
-                </td>
-                <td className="p-4">{roleBadge(u.role)}</td>
-                <td className="p-4">{activeBadge(u.is_active)}</td>
-                <td className="p-4">{fmtDate(u.created_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Tableau — même structure que “commandes” */}
+      <div className="card admin-wrapper">
+        <div className="table-frame">
+          <div className="table-scroll">
+            <table
+              className="min-w-full admin-table"
+              style={{
+                tableLayout: "fixed",
+                width: "100%",
+                fontSize: "clamp(12px, 1.4vw, 14px)",
+                lineHeight: 1.5,
+                borderCollapse: "separate",
+                borderSpacing: 0,
+              }}
+            >
+              {/* Largeurs fixes et régulières */}
+              <colgroup>
+                <col style={{ width: 80 }} /> {/* ID */}
+                <col style={{ width: 250 }} /> {/* Email */}
+                <col style={{ width: 180 }} /> {/* Nom */}
+                <col style={{ width: 130 }} /> {/* Rôle */}
+                <col style={{ width: 110 }} /> {/* Actif */}
+                <col style={{ width: 180 }} /> {/* Créé le */}
+              </colgroup>
 
-      {filtered.length === 0 && (
-        <div className="muted mt-3">
-          Aucun utilisateur ne correspond à ta recherche.
+              <thead>
+                <tr>
+                  <th style={thLeft}>ID</th>
+                  <th style={thLeft}>Email</th>
+                  <th style={thLeft}>Nom</th>
+                  <th style={thCenter}>Rôle</th> {/* ← etait thLeft */}
+                  <th style={thCenter}>Actif</th> {/* ← etait thLeft */}
+                  <th style={thRight}>Créé le</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered.map((u, i) => (
+                  <tr key={u.id}>
+                    <td className="font-mono opacity-80" style={tdLeft}>
+                      {u.id}
+                    </td>
+
+                    <td style={tdLeft}>
+                      <div
+                        title={u.email ?? ""}
+                        style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+                      >
+                        {u.email ?? "—"}
+                      </div>
+                    </td>
+
+                    <td style={tdLeft}>
+                      <div
+                        title={`${u.first_name ?? ""} ${u.last_name ?? ""}`}
+                        style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+                      >
+                        {(u.first_name ?? "—") + " " + (u.last_name ?? "")}
+                      </div>
+                    </td>
+
+                    <td style={tdCenter}>{roleBadge(u.role)}</td>
+                    <td style={tdCenter}>{activeBadge(u.is_active)}</td>
+                    <td style={tdRight}>{fmtDate(u.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      )}
+
+        {filtered.length === 0 && (
+          <div className="muted mt-3">
+            Aucun utilisateur ne correspond à ta recherche.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

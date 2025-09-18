@@ -55,12 +55,64 @@ export default function StockTable() {
 
   if (loading) return <p className="container-page">Chargement…</p>;
 
+  // alignements cohérents
+  const thLeft = { textAlign: "left" as const };
+  const thCenter = { textAlign: "center" as const };
+  const thRight = { textAlign: "right" as const };
+  const tdLeft = {
+    textAlign: "left" as const,
+    verticalAlign: "middle" as const,
+  };
+  const tdCenter = {
+    textAlign: "center" as const,
+    verticalAlign: "middle" as const,
+  };
+  const tdRight = {
+    textAlign: "right" as const,
+    verticalAlign: "middle" as const,
+  };
+
   return (
     <div className="container-page" style={{ maxWidth: 1200 }}>
+      <style>{`
+        .admin-table { font-variant-numeric: tabular-nums; }
+        .admin-table thead th {
+          font-weight: 700; padding: 12px 16px;
+          border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        .admin-table tbody td {
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(255,255,255,.05);
+        }
+        .admin-table tbody tr:last-child td { border-bottom: 0; }
+        .admin-table th, .admin-table td { white-space: nowrap; }
+        .qty-pill {
+          padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 800;
+          background: rgba(59,130,246,.12); color: rgb(191,219,254);
+          border: 1px solid rgba(59,130,246,.55);
+        }
+        .action-pill {
+          min-width: 44px; height: 32px; border-radius: 999px;
+          display: inline-flex; align-items: center; justify-content: center;
+          padding: 0 12px;
+        }
+        .action-minus { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); }
+        .action-plus  { background: rgba(59,130,246,.15); border: 1px solid rgba(59,130,246,.45); }
+      `}</style>
+
       <h1 className="text-2xl font-semibold mb-2">Stock par variante</h1>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-2">
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          marginBottom: 12,
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+        }}
+      >
         <div className="text-sm opacity-70">
           {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} / {total}
         </div>
@@ -73,128 +125,114 @@ export default function StockTable() {
         />
       </div>
 
-      <div
-        className="overflow-auto rounded-2xl"
-        style={{ border: "1px solid rgba(255,255,255,.08)" }}
-      >
-        <table
-          className="min-w-full"
-          style={{
-            fontSize: 14,
-            lineHeight: 1.6,
-            borderCollapse: "separate",
-            borderSpacing: 0,
-          }}
-        >
-          <thead
-            style={{
-              position: "sticky",
-              top: 0,
-              zIndex: 1,
-              background: "rgba(255,255,255,.04)",
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            <tr style={{ textAlign: "left" }}>
-              <th className="p-4">Variant ID</th>
-              <th className="p-4" style={{ width: 140 }}>
-                SKU
-              </th>
-              <th className="p-4" style={{ width: 520 }}>
-                Produit
-              </th>
-              <th className="p-4 text-right" style={{ width: 100 }}>
-                Pointure
-              </th>
-              <th className="p-4 text-right" style={{ width: 100 }}>
-                Stock
-              </th>
-              <th className="p-4" style={{ width: 140 }}>
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r, i) => (
-              <tr
-                key={r.variant_id}
+      {/* Tableau */}
+      <div className="card admin-wrapper">
+        <div className="table-frame">
+          <div className="table-scroll">
+            <table
+              className="min-w-full admin-table"
+              style={{
+                tableLayout: "fixed",
+                width: "100%",
+                fontSize: "clamp(12px, 1.4vw, 14px)",
+                lineHeight: 1.5,
+                borderCollapse: "separate",
+                borderSpacing: 0,
+              }}
+            >
+              {/* Largeurs fixes et régulières */}
+              <colgroup>
+                <col style={{ width: 360 }} /> {/* Variant ID (long) */}
+                <col style={{ width: 160 }} /> {/* SKU */}
+                <col style={{ width: 420 }} /> {/* Produit */}
+                <col style={{ width: 110 }} /> {/* Pointure */}
+                <col style={{ width: 110 }} /> {/* Stock */}
+                <col style={{ width: 160 }} /> {/* Actions */}
+              </colgroup>
+
+              <thead
                 style={{
-                  background:
-                    i % 2 === 0 ? "rgba(255,255,255,.02)" : "transparent",
-                  borderTop: "1px solid rgba(255,255,255,.06)",
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                  background: "rgba(255,255,255,.04)",
+                  backdropFilter: "blur(4px)",
                 }}
-                className="hover:bg-white/5 transition-colors"
               >
-                <td
-                  className="p-4 font-mono opacity-80"
-                  style={{ whiteSpace: "nowrap" }}
-                >
-                  {r.variant_id}
-                </td>
-                <td className="p-4 font-mono" style={{ maxWidth: 140 }}>
-                  <div
-                    title={r.sku ?? ""}
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
+                <tr>
+                  <th style={thLeft}>Variant ID</th>
+                  <th style={thLeft}>SKU</th>
+                  <th style={thLeft}>Produit</th>
+                  <th style={thRight}>Pointure</th>
+                  <th style={thCenter}>Stock</th>
+                  <th style={thCenter}>Actions</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr
+                    key={r.variant_id}
+                    className="hover:bg-white/5 transition-colors"
                   >
-                    {r.sku ?? "—"}
-                  </div>
-                </td>
-                <td className="p-4" style={{ maxWidth: 520 }}>
-                  <div
-                    title={r.name ?? ""}
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {r.name ?? "—"}
-                  </div>
-                </td>
-                <td className="p-4 text-right">{r.size_eu ?? "—"}</td>
-                <td className="p-4 text-right">
-                  <span
-                    className="px-2 py-0.5 rounded-full text-xs"
-                    style={{
-                      background: "rgba(59,130,246,.12)",
-                      color: "rgb(59,130,246)",
-                      border: "1px solid rgb(59,130,246)",
-                    }}
-                  >
-                    {r.stock}
-                  </span>
-                </td>
-                <td className="p-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn-outline"
-                      onClick={() => adjust(r.variant_id, -1)}
-                    >
-                      -1
-                    </button>
-                    <button
-                      className="btn"
-                      onClick={() => adjust(r.variant_id, +1)}
-                    >
-                      +1
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td className="p-6 text-center muted" colSpan={6}>
-                  Aucun résultat pour « {q} ».
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    <td style={tdLeft} className="font-mono opacity-80">
+                      {r.variant_id}
+                    </td>
+
+                    <td style={tdLeft} className="font-mono">
+                      <div
+                        title={r.sku ?? ""}
+                        style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+                      >
+                        {r.sku ?? "—"}
+                      </div>
+                    </td>
+
+                    <td style={tdLeft}>
+                      <div
+                        title={r.name ?? ""}
+                        style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+                      >
+                        {r.name ?? "—"}
+                      </div>
+                    </td>
+
+                    <td style={tdRight}>{r.size_eu ?? "—"}</td>
+
+                    <td style={tdCenter}>
+                      <span className="qty-pill">{r.stock}</span>
+                    </td>
+
+                    <td style={tdCenter}>
+                      <div style={{ display: "inline-flex", gap: 8 }}>
+                        <button
+                          className="action-pill action-minus"
+                          onClick={() => adjust(r.variant_id, -1)}
+                        >
+                          -1
+                        </button>
+                        <button
+                          className="action-pill action-plus"
+                          onClick={() => adjust(r.variant_id, +1)}
+                        >
+                          +1
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-6 text-center muted">
+                      Aucun résultat pour « {q} ».
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       {/* Pagination */}
