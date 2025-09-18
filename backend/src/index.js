@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import pool from "./models/db.js";   // ⚡ doit être importé avant fixSequences()
+import orderRoutes from "./routes/orders.js";
+
+
 
 async function fixSequences() {
   try {
@@ -67,3 +70,5 @@ app.listen(PORT, async () => {
   console.log(`✅ Serveur démarré sur http://localhost:${PORT}`);
   await fixSequences();   // ⚡ appelé après démarrage
 });
+
+app.use("/orders", orderRoutes);
