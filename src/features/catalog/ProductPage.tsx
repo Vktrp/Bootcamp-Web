@@ -387,10 +387,7 @@ export default function ProductPage() {
             </div>
           </div>
 
-          {/* Métadonnées */}
-          <div className="text-sm mt-2">
-            {exactVariant?.sku && <>SKU&nbsp;: {exactVariant.sku}</>}
-          </div>
+          {/* Métadonnées — SKU retiré de l'affichage */}
 
           {/* Actions */}
           <div className="actions mt-4">
