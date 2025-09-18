@@ -5,6 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getProduct, type Product, type Variant } from "./api";
 import { supabase } from "../../lib/supabase";
 import { SIZE_RANGES } from "../../lib/sizes";
+import {
+  groupByCanon,
+  pickGroupImage,
+  type CanonGroup,
+  type SimpleVariant,
+} from "../../lib/colors";
 
 function eurosFromCents(cents?: number | null) {
   if (cents == null) return "—";
@@ -12,25 +18,6 @@ function eurosFromCents(cents?: number | null) {
     style: "currency",
     currency: "EUR",
   });
-}
-
-/** Découpe "Dark Grey/Black/Wolf Grey" -> ["Dark Grey","Black","Wolf Grey"] */
-function splitColorway(cw?: string | null): string[] {
-  if (!cw) return [];
-  return cw
-    .split("/")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/** Teste si un colorway contient un jeton choisi (insensible à la casse) */
-function colorwayIncludesToken(
-  cw: string | null | undefined,
-  token: string
-): boolean {
-  if (!cw || !token) return false;
-  const tokens = splitColorway(cw).map((t) => t.toLowerCase());
-  return tokens.includes(token.toLowerCase());
 }
 
 export default function ProductPage() {
@@ -47,7 +34,7 @@ export default function ProductPage() {
     enabled: Boolean(productId),
   });
 
-  // Variantes dédoublonnées + tri par taille
+  // Variantes dédoublonnées + tri par taille EU
   const variants: Variant[] = useMemo(() => {
     const seen = new Set<string>();
     const arr: Variant[] = [];
@@ -70,19 +57,26 @@ export default function ProductPage() {
     return arr;
   }, [p]);
 
-  // Liste des JETONS de couleur (split par "/")
-  const colorTokens = useMemo(() => {
-    const set = new Set<string>();
-    for (const v of variants) {
-      for (const token of splitColorway((v as any).colorway)) {
-        if (token) set.add(token);
-      }
-    }
-    return Array.from(set);
-  }, [variants]);
+  // ====== GROUPES DE COULEURS CANONIQUES (Option 2) ======
+  const colorGroupsMap = useMemo(
+    () => groupByCanon(variants as unknown as SimpleVariant[]),
+    [variants]
+  );
+  const colorOptions = useMemo(
+    () =>
+      [...colorGroupsMap.values()]
+        .map((g) => ({
+          id: g.id,
+          key: g.id.toLowerCase(),
+          label: g.display,
+          image: pickGroupImage(g),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [colorGroupsMap]
+  );
 
   // États UI
-  const [color, setColor] = useState<string>(""); // ici on stocke le jeton
+  const [colorKey, setColorKey] = useState<string>(""); // key = id.toLowerCase()
   const [size, setSize] = useState<string>("");
   const [fav, setFav] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -93,7 +87,6 @@ export default function ProductPage() {
   const colorRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<HTMLDivElement>(null);
 
-  // Ferme si clic à l’extérieur
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (colorRef.current && !colorRef.current.contains(e.target as Node))
@@ -105,47 +98,44 @@ export default function ProductPage() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // Tailles disponibles pour le jeton couleur choisi
+  // Groupe sélectionné
+  const selectedGroup: CanonGroup | undefined = useMemo(() => {
+    if (!colorKey) return undefined;
+    return colorGroupsMap.get(colorKey);
+  }, [colorKey, colorGroupsMap]);
+
+  // Tailles dispo pour ce groupe
   const sizesForColor = useMemo(() => {
-    const pool = variants.filter(
-      (v) => !color || colorwayIncludesToken((v as any).colorway, color)
-    );
-    return new Set(pool.map((v) => String(v.size)));
-  }, [variants, color]);
+    const set = new Set<string>();
+    for (const v of selectedGroup?.variants ?? []) {
+      set.add(String(v.size ?? ""));
+    }
+    return set;
+  }, [selectedGroup]);
+
   const hasAnySize = sizesForColor.size > 0;
 
-  // Variante exacte (taille + jeton)
-  const exactVariant = useMemo(
-    () =>
-      variants.find(
-        (v) =>
-          String(v.size) === String(size) &&
-          (!color || colorwayIncludesToken((v as any).colorway, color))
-      ),
-    [variants, size, color]
-  );
+  // Variante exacte (taille dans le groupe)
+  const exactVariant = useMemo(() => {
+    if (!selectedGroup) return undefined;
+    return (selectedGroup.variants as Variant[]).find(
+      (v) => String(v.size ?? "") === String(size)
+    );
+  }, [selectedGroup, size]);
 
-  // Variante pour l’image (prend une variante qui contient le jeton et a une image)
-  const variantForImage = useMemo(
-    () =>
-      exactVariant ??
-      variants.find(
-        (v) =>
-          color &&
-          colorwayIncludesToken((v as any).colorway, color) &&
-          (v as any).image
-      ) ??
-      variants[0],
-    [variants, exactVariant, color]
-  );
-
+  // Prix + image affichés
   const displayPriceCents = exactVariant?.priceCents ?? p?.priceCents ?? null;
+
   const imageForColor =
-    (variantForImage as any)?.image || (p?.image as string | undefined);
+    pickGroupImage(selectedGroup) || (p?.image as string | undefined);
 
   // Init défauts + favori
   useEffect(() => {
-    if (!color && colorTokens.length) setColor(colorTokens[0]);
+    // couleur par défaut = première option
+    if (!colorKey && colorOptions.length) {
+      setColorKey(colorOptions[0].key);
+    }
+    // taille par défaut = première dispo pour le groupe sinon première de SIZE_RANGES
     if (!size) {
       const first = (SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
         SIZE_RANGES[0] ??
@@ -158,18 +148,19 @@ export default function ProductPage() {
       );
       setFav(favs.has(p.id));
     }
-  }, [variants, colorTokens, sizesForColor, p, color, size]);
+  }, [colorOptions, sizesForColor, p, colorKey, size]);
 
-  // Si la taille courante n’existe plus pour le jeton couleur, on ajuste
+  // Ajuster la taille si on change de groupe et que la taille n’existe pas
   useEffect(() => {
-    if (size && hasAnySize && !sizesForColor.has(String(size))) {
+    if (!size || !selectedGroup) return;
+    if (hasAnySize && !sizesForColor.has(String(size))) {
       const first =
         SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
         Array.from(sizesForColor)[0] ??
         "";
       setSize(String(first || ""));
     }
-  }, [sizesForColor, hasAnySize, size]);
+  }, [selectedGroup, hasAnySize, sizesForColor, size]);
 
   function toggleFavorite() {
     if (!p) return;
@@ -187,16 +178,20 @@ export default function ProductPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      const vColorway: string | null = (exactVariant as any).colorway ?? null;
 
       if (user) {
-        const { error } = await supabase.from("shopping_carts").insert({
-          user_id: user.id,
-          product_variant_id: (exactVariant as any).sku,
-          quantity: 1,
-        });
+        // Simple insert distant (garde ta logique/RPC si tu l’as mise en place)
+        const { error } = await supabase.from("shopping_carts").upsert(
+          {
+            user_id: user.id,
+            product_variant_id: (exactVariant as any).sku,
+            quantity: 1,
+          },
+          { onConflict: "user_id,product_variant_id" }
+        );
         if (error) throw error;
       } else {
+        // Fallback localStorage
         type LocalItem = {
           variant_id: string;
           name: string;
@@ -215,8 +210,7 @@ export default function ProductPage() {
         const idx = cart.findIndex(
           (i) =>
             i.variant_id === idv &&
-            i.size === String((exactVariant as any).size ?? "") &&
-            (i.colorway ?? null) === vColorway
+            i.size === String((exactVariant as any).size ?? "")
         );
 
         if (idx >= 0) cart[idx].qty += 1;
@@ -228,7 +222,7 @@ export default function ProductPage() {
             priceCents: displayPriceCents ?? undefined,
             image:
               (exactVariant as any).image ?? (p.image as string | undefined),
-            colorway: vColorway,
+            colorway: (exactVariant as any).colorway ?? null,
             qty: 1,
           });
 
@@ -272,6 +266,10 @@ export default function ProductPage() {
     );
   }
 
+  // Libellé de la couleur sélectionnée
+  const selectedLabel =
+    colorOptions.find((c) => c.key === colorKey)?.label || "Choisir";
+
   return (
     <div className="container-page">
       <div className="product-layout">
@@ -302,8 +300,8 @@ export default function ProductPage() {
             {eurosFromCents(displayPriceCents)}
           </div>
 
-          {/* Couleur (jetons séparés par "/") */}
-          {colorTokens.length > 0 && (
+          {/* Couleur (canonisée) */}
+          {colorOptions.length > 0 && (
             <div className="mt-4">
               <label>Couleur</label>
               <div className="size-select" ref={colorRef}>
@@ -314,26 +312,26 @@ export default function ProductPage() {
                   aria-haspopup="listbox"
                   aria-expanded={colorOpen}
                 >
-                  <span>{color || "Choisir"}</span>
+                  <span>{selectedLabel}</span>
                   <span className="caret">▾</span>
                 </button>
                 {colorOpen && (
                   <div className="size-panel" role="listbox">
-                    {colorTokens.map((cw) => {
-                      const isSelected = color === cw;
+                    {colorOptions.map((opt) => {
+                      const isSelected = opt.key === colorKey;
                       return (
                         <button
-                          key={cw}
+                          key={opt.key}
                           type="button"
                           className={
                             "size-option" + (isSelected ? " selected" : "")
                           }
                           onClick={() => {
-                            setColor(cw);
+                            setColorKey(opt.key);
                             setColorOpen(false);
                           }}
                         >
-                          {cw}
+                          {opt.label}
                         </button>
                       );
                     })}
@@ -343,7 +341,7 @@ export default function ProductPage() {
             </div>
           )}
 
-          {/* Taille (liée au jeton) */}
+          {/* Taille */}
           <div className="mt-4">
             <label>Taille (EU)</label>
             <div className="size-select" ref={sizeRef}>
@@ -389,13 +387,12 @@ export default function ProductPage() {
             </div>
           </div>
 
+          {/* Métadonnées */}
           <div className="text-sm mt-2">
             {exactVariant?.sku && <>SKU&nbsp;: {exactVariant.sku}</>}
-            {(exactVariant as any)?.colorway && (
-              <> • Couleur: {(exactVariant as any).colorway}</>
-            )}
           </div>
 
+          {/* Actions */}
           <div className="actions mt-4">
             <button
               className="btn"

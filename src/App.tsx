@@ -18,6 +18,8 @@ import OrderListPage from "./features/orders/OrderListPage";
 import OrderDetailPage from "./features/orders/OrderDetailPage";
 import PrivacyPage from "./features/rgpd/PrivacyPage";
 import FavoritesPage from "./features/favorites/FavoritesPage";
+import CreateProduct from "./features/admin/CreateProduct";
+import UsersTable from "@/features/admin/UsersTable";
 
 export default function App() {
   return (
@@ -60,6 +62,8 @@ export default function App() {
               </RoleGuard>
             }
           />
+          <Route path="/admin/create-product" element={<CreateProduct />} />
+
           <Route
             path="/admin/products/new"
             element={
@@ -68,6 +72,8 @@ export default function App() {
               </RoleGuard>
             }
           />
+          <Route path="/admin/users" element={<UsersTable />} />
+
           <Route path="/account" element={<AccountPage />} />
           <Route path="/orders" element={<OrderListPage />} />
           <Route path="/orders/:id" element={<OrderDetailPage />} />
