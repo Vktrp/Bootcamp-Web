@@ -1,11 +1,41 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import pool from "./models/db.js";   // ⚡ doit être importé avant fixSequences()
+import pool from "./models/db.js";
+
+import authRoutes from "./routes/auth.js";
+import productRoutes from "./routes/products.js";
+import cartRoutes from "./routes/cart.js";
 import orderRoutes from "./routes/orders.js";
+import inventoryRoutes from "./routes/inventory.js";
 
+// Charger les variables d'environnement
+dotenv.config();
 
+// Initialiser Express
+const app = express();
+app.use(cors());
+app.use(express.json());
 
+// Déclaration des routes
+app.use("/auth", authRoutes);
+app.use("/products", productRoutes);
+app.use("/cart", cartRoutes);
+app.use("/orders", orderRoutes);
+app.use("/inventory", inventoryRoutes);
+
+// Test DB
+app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Erreur DB" });
+  }
+});
+
+// ⚠️ Optionnel : recalage des séquences
 async function fixSequences() {
   try {
     await pool.query(`
@@ -38,37 +68,10 @@ async function fixSequences() {
   }
 }
 
-// Charger les variables d'environnement
-dotenv.config();
-
-// Initialiser Express
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Routes
-import authRoutes from "./routes/auth.js";
-import productRoutes from "./routes/products.js";
-import cartRoutes from "./routes/cart.js";
-
-app.use("/auth", authRoutes);
-app.use("/products", productRoutes);
-app.use("/cart", cartRoutes);
-
-app.get("/test-db", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT NOW()");
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Erreur DB" });
-  }
-});
-
+// Démarrer le serveur
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`✅ Serveur démarré sur http://localhost:${PORT}`);
-  await fixSequences();   // ⚡ appelé après démarrage
+  // ⚠️ tu peux commenter cette ligne si ça bloque trop avec IPv6/DNS
+  await fixSequences();
 });
-
-app.use("/orders", orderRoutes);
