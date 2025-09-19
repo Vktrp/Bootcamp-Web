@@ -1,35 +1,52 @@
 import { useState } from "react";
+
 import { useDispatch } from "react-redux";
-import { useNavigate } from "react-router-dom";
+
+import { useNavigate, Link } from "react-router-dom";
+
 import { signIn } from "./api";
+
 import { setUser } from "./slice";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
+
   const [password, setPassword] = useState("");
+
   const [err, setErr] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
+
   const dispatch = useDispatch();
+
   const nav = useNavigate();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+
     setErr(null);
+
     setLoading(true);
+
     try {
       const profile = await signIn(email, password);
 
       dispatch(
         setUser({
           id: profile.id,
+
           email: profile.email,
+
           first_name: profile.first_name,
+
           last_name: profile.last_name,
+
           address: profile.address,
-          avatarUrl: profile.avatar_url,
+
           role: profile.role,
         })
       );
+
       nav("/");
     } catch (e: any) {
       setErr(e?.message || "Échec de connexion");
@@ -40,6 +57,7 @@ export default function LoginPage() {
 
   function devDemo(role: "customer" | "seller" | "admin") {
     dispatch(setUser({ id: "dev", email: `${role}@demo.local`, role } as any));
+
     nav("/");
   }
 
@@ -49,7 +67,6 @@ export default function LoginPage() {
         <h1 className="title" style={{ fontSize: 40, marginBottom: 12 }}>
           Connexion
         </h1>
-
         <form onSubmit={onSubmit} className="space-y">
           <label>Email</label>
           <input
@@ -57,6 +74,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="email@ex.com"
+            autoComplete="email"
           />
           <label>Mot de passe</label>
           <input
@@ -64,7 +82,9 @@ export default function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
           />
+
           {err && (
             <p className="text-danger" style={{ marginTop: 8 }}>
               {err}
@@ -74,11 +94,12 @@ export default function LoginPage() {
             {loading ? "Connexion..." : "Se connecter"}
           </button>
         </form>
-
         <div
           style={{
             borderTop: "1px solid var(--border)",
+
             marginTop: 16,
+
             paddingTop: 12,
           }}
         >
@@ -96,6 +117,18 @@ export default function LoginPage() {
               Admin
             </button>
           </div>
+        </div>
+
+        {/* Lien d'inscription — tout en bas, en petit */}
+        <div style={{ marginTop: 12, textAlign: "center" }}>
+          <span className="text-sm">Pas de compte ? </span>
+          <Link
+            to="/register"
+            className="text-sm"
+            style={{ color: "var(--accent)" }}
+          >
+            Inscrivez-vous
+          </Link>
         </div>
       </div>
     </div>

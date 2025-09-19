@@ -13,6 +13,7 @@ import StockTable from "./features/admin/StockTable";
 import ProductForm from "./features/admin/ProductForm";
 import RoleGuard from "./app/guards/RoleGuard";
 import LoginPage from "./features/auth/LoginPage";
+import RegisterPage from "./features/auth/RegisterPage";
 import AccountPage from "./features/Account/AccountPage";
 import OrderListPage from "./features/orders/OrderListPage";
 import OrderDetailPage from "./features/orders/OrderDetailPage";
@@ -37,6 +38,7 @@ export default function App() {
             element={<OrderConfirmation />}
           />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
 
           <Route
             path="/seller"
