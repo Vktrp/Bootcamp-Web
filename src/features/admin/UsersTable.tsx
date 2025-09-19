@@ -1,5 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { listUsers, type UserRow } from "./api";
+
+function BackBar() {
+  const navigate = useNavigate();
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 55,
+        zIndex: 40,
+        margin: "8px 0 12px",
+        width: "15vw",
+        marginLeft: "calc(50% - 50vw)",
+        paddingLeft: 12,
+      }}
+    >
+      <button className="btn-outline" onClick={() => navigate(-1)}>
+        ← Retour
+      </button>
+    </div>
+  );
+}
 
 /* ───── Badges ───── */
 function Badge({
@@ -53,7 +75,6 @@ function fmtDate(iso?: string | null) {
   });
 }
 
-/* ───── Types & tri ───── */
 type SortKey = "created_at" | "email" | "role";
 
 export default function UsersTable() {
@@ -105,9 +126,14 @@ export default function UsersTable() {
     return base;
   }, [rows, q, sort, dir]);
 
-  if (loading) return <p className="container-page">Chargement…</p>;
+  if (loading)
+    return (
+      <div className="container-page">
+        <BackBar />
+        Chargement…
+      </div>
+    );
 
-  // alignements (mêmes règles que le tableau des commandes)
   const thLeft = { textAlign: "left" as const };
   const thRight = { textAlign: "right" as const };
   const tdLeft = {
@@ -122,23 +148,15 @@ export default function UsersTable() {
     textAlign: "right" as const,
     verticalAlign: "middle" as const,
   };
-  // ajoute cette constante avec les autres
   const thCenter = { textAlign: "center" as const };
 
   return (
     <div className="container-page" style={{ maxWidth: 1200 }}>
-      {/* styles locaux, calqués sur l’UI “commandes” */}
+      <BackBar />
       <style>{`
         .admin-table { font-variant-numeric: tabular-nums; }
-        .admin-table thead th {
-          font-weight: 700;
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(255,255,255,.08);
-        }
-        .admin-table tbody td {
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(255,255,255,.05);
-        }
+        .admin-table thead th { font-weight: 700; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+        .admin-table tbody td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.05); }
         .admin-table tbody tr:last-child td { border-bottom: 0; }
         .admin-table th, .admin-table td { white-space: nowrap; }
         .users-toolbar { padding: 16px; margin-bottom: 16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
@@ -147,7 +165,6 @@ export default function UsersTable() {
 
       <h1 className="text-2xl font-semibold mb-4">Utilisateurs</h1>
 
-      {/* Barre d’outils */}
       <div className="card users-toolbar">
         <input
           className="input"
@@ -181,7 +198,6 @@ export default function UsersTable() {
         </div>
       </div>
 
-      {/* Tableau — même structure que “commandes” */}
       <div className="card admin-wrapper">
         <div className="table-frame">
           <div className="table-scroll">
@@ -196,14 +212,13 @@ export default function UsersTable() {
                 borderSpacing: 0,
               }}
             >
-              {/* Largeurs fixes et régulières */}
               <colgroup>
-                <col style={{ width: 80 }} /> {/* ID */}
-                <col style={{ width: 250 }} /> {/* Email */}
-                <col style={{ width: 180 }} /> {/* Nom */}
-                <col style={{ width: 130 }} /> {/* Rôle */}
-                <col style={{ width: 110 }} /> {/* Actif */}
-                <col style={{ width: 180 }} /> {/* Créé le */}
+                <col style={{ width: 80 }} />
+                <col style={{ width: 250 }} />
+                <col style={{ width: 180 }} />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 180 }} />
               </colgroup>
 
               <thead>
@@ -211,19 +226,18 @@ export default function UsersTable() {
                   <th style={thLeft}>ID</th>
                   <th style={thLeft}>Email</th>
                   <th style={thLeft}>Nom</th>
-                  <th style={thCenter}>Rôle</th> {/* ← etait thLeft */}
-                  <th style={thCenter}>Actif</th> {/* ← etait thLeft */}
+                  <th style={thCenter}>Rôle</th>
+                  <th style={thCenter}>Actif</th>
                   <th style={thRight}>Créé le</th>
                 </tr>
               </thead>
 
               <tbody>
-                {filtered.map((u, i) => (
+                {filtered.map((u) => (
                   <tr key={u.id}>
                     <td className="font-mono opacity-80" style={tdLeft}>
                       {u.id}
                     </td>
-
                     <td style={tdLeft}>
                       <div
                         title={u.email ?? ""}
@@ -232,7 +246,6 @@ export default function UsersTable() {
                         {u.email ?? "—"}
                       </div>
                     </td>
-
                     <td style={tdLeft}>
                       <div
                         title={`${u.first_name ?? ""} ${u.last_name ?? ""}`}
@@ -241,7 +254,6 @@ export default function UsersTable() {
                         {(u.first_name ?? "—") + " " + (u.last_name ?? "")}
                       </div>
                     </td>
-
                     <td style={tdCenter}>{roleBadge(u.role)}</td>
                     <td style={tdCenter}>{activeBadge(u.is_active)}</td>
                     <td style={tdRight}>{fmtDate(u.created_at)}</td>

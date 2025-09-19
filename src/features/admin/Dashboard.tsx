@@ -125,7 +125,6 @@ export default function Dashboard() {
 
   return (
     <div className="container-page admin-page" style={{ maxWidth: 1100 }}>
-      {/* styles locaux pour uniformiser */}
       <style>{`
         .admin-table { font-variant-numeric: tabular-nums; }
         .admin-table thead th {
@@ -140,9 +139,19 @@ export default function Dashboard() {
         .admin-table tbody tr:last-child td { border-bottom: 0; }
         .admin-table th, .admin-table td { white-space: nowrap; }
         .table-frame { border-radius: 14px; }
+
+        /* espacement horizontal entre les 3 boutons */
+        .admin-actions > * + * { margin-left: 12px; }
+
+        /* marge sous le bloc des boutons pour aérer avant les KPIs */
+        .admin-actions { margin-bottom: 18px; }
+        @media (min-width: 768px) {
+          .admin-actions { margin-bottom: 24px; }
+        }
       `}</style>
 
-      <div className="flex gap-3 mb-5 flex-wrap">
+      {/* Boutons d’action */}
+      <div className="admin-actions">
         <Link to="/admin/stock" className="btn-outline">
           Gérer le stock
         </Link>
@@ -250,13 +259,12 @@ export default function Dashboard() {
                   borderSpacing: 0,
                 }}
               >
-                {/* Largeurs fixes et régulières */}
                 <colgroup>
-                  <col style={{ width: 120 }} /> {/* ID */}
-                  <col style={{ width: 180 }} /> {/* Statut */}
-                  <col style={{ width: 120 }} /> {/* Paiement */}
-                  <col style={{ width: 120 }} /> {/* Montant */}
-                  <col style={{ width: 180 }} /> {/* Date */}
+                  <col style={{ width: 120 }} />
+                  <col style={{ width: 180 }} />
+                  <col style={{ width: 120 }} />
+                  <col style={{ width: 120 }} />
+                  <col style={{ width: 180 }} />
                 </colgroup>
 
                 <thead>
@@ -291,8 +299,6 @@ export default function Dashboard() {
       </div>
 
       <div className="mt-3 text-xs opacity-70">
-        Astuce : ces chiffres dépendent des policies RLS. Assure-toi que les
-        admins ont un droit de lecture global.
       </div>
     </div>
   );

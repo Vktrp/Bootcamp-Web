@@ -1,5 +1,4 @@
-// src/features/catalog/ProductPage.tsx
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProduct, type Product, type Variant } from "./api";
@@ -11,6 +10,7 @@ import {
   type CanonGroup,
   type SimpleVariant,
 } from "../../lib/colors";
+import { slugToGender, inScopeGender, type ScopeGender } from "../../lib/gender";
 
 function eurosFromCents(cents?: number | null) {
   if (cents == null) return "—";
@@ -20,9 +20,36 @@ function eurosFromCents(cents?: number | null) {
   });
 }
 
+// Barre de retour collée à gauche (style que tu utilises déjà)
+function BackBar() {
+  const navigate = useNavigate();
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 55,
+        zIndex: 40,
+        margin: "8px 0 12px",
+        width: "15vw",
+        marginLeft: "calc(60% - 50vw)",
+        paddingLeft: 12,
+      }}
+    >
+      <button className="btn-outline" onClick={() => navigate(-1)}>
+        ← Retour
+      </button>
+    </div>
+  );
+}
+
 export default function ProductPage() {
   const { id } = useParams<{ id: string }>();
   const productId = id ?? "";
+
+  // on récupère le genre depuis l'URL (?category=...)
+  const [searchParams] = useSearchParams();
+  const categoryParam = searchParams.get("category") || undefined;
+  const scopeGender: ScopeGender = slugToGender(categoryParam);
 
   const {
     data: p,
@@ -34,12 +61,12 @@ export default function ProductPage() {
     enabled: Boolean(productId),
   });
 
-  // Variantes dédoublonnées + tri par taille EU
-  const variants: Variant[] = useMemo(() => {
+  // Variantes dédoublonnées + tri par taille EU (dans toutes les variantes du produit)
+  const allVariants: Variant[] = useMemo(() => {
     const seen = new Set<string>();
     const arr: Variant[] = [];
     for (const v of p?.variants ?? []) {
-      const k = `${v.sku}|${v.size ?? ""}|${(v as any).colorway ?? ""}`;
+      const k = `${(v as any).sku}|${v.size ?? ""}|${(v as any).colorway ?? ""}`;
       if (seen.has(k)) continue;
       seen.add(k);
       arr.push(v);
@@ -57,7 +84,13 @@ export default function ProductPage() {
     return arr;
   }, [p]);
 
-  // ====== GROUPES DE COULEURS CANONIQUES (Option 2) ======
+  // >>> Restreindre par genre (UNISEX reste visible pour tous)
+  const variants: Variant[] = useMemo(() => {
+    if (!scopeGender) return allVariants;
+    return allVariants.filter((v: any) => inScopeGender(v.gender, scopeGender));
+  }, [allVariants, scopeGender]);
+
+  // Groupes couleur sur les variantes filtrées par genre
   const colorGroupsMap = useMemo(
     () => groupByCanon(variants as unknown as SimpleVariant[]),
     [variants]
@@ -76,7 +109,7 @@ export default function ProductPage() {
   );
 
   // États UI
-  const [colorKey, setColorKey] = useState<string>(""); // key = id.toLowerCase()
+  const [colorKey, setColorKey] = useState<string>("");
   const [size, setSize] = useState<string>("");
   const [fav, setFav] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -107,9 +140,7 @@ export default function ProductPage() {
   // Tailles dispo pour ce groupe
   const sizesForColor = useMemo(() => {
     const set = new Set<string>();
-    for (const v of selectedGroup?.variants ?? []) {
-      set.add(String(v.size ?? ""));
-    }
+    for (const v of selectedGroup?.variants ?? []) set.add(String(v.size ?? ""));
     return set;
   }, [selectedGroup]);
 
@@ -125,23 +156,22 @@ export default function ProductPage() {
 
   // Prix + image affichés
   const displayPriceCents = exactVariant?.priceCents ?? p?.priceCents ?? null;
-
   const imageForColor =
     pickGroupImage(selectedGroup) || (p?.image as string | undefined);
 
   // Init défauts + favori
   useEffect(() => {
-    // couleur par défaut = première option
-    if (!colorKey && colorOptions.length) {
-      setColorKey(colorOptions[0].key);
-    }
-    // taille par défaut = première dispo pour le groupe sinon première de SIZE_RANGES
+    // si on change de genre via l'URL, on reset la couleur sélectionnée
+    if (colorOptions.length && !colorKey) setColorKey(colorOptions[0].key);
+
     if (!size) {
-      const first = (SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
-        SIZE_RANGES[0] ??
-        "") as string;
-      setSize(String(first));
+      const first =
+        (SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
+          SIZE_RANGES[0] ??
+          "") as string;
+      if (first) setSize(String(first));
     }
+
     if (p) {
       const favs = new Set<string>(
         JSON.parse(localStorage.getItem("favs") || "[]")
@@ -180,7 +210,6 @@ export default function ProductPage() {
       } = await supabase.auth.getUser();
 
       if (user) {
-        // Simple insert distant (garde ta logique/RPC si tu l’as mise en place)
         const { error } = await supabase.from("shopping_carts").upsert(
           {
             user_id: user.id,
@@ -191,7 +220,6 @@ export default function ProductPage() {
         );
         if (error) throw error;
       } else {
-        // Fallback localStorage
         type LocalItem = {
           variant_id: string;
           name: string;
@@ -236,6 +264,7 @@ export default function ProductPage() {
   if (isLoading) {
     return (
       <div className="container-page">
+        <BackBar />
         <div className="product-layout">
           <div className="skeleton" style={{ height: 420, borderRadius: 16 }} />
           <div>
@@ -256,6 +285,7 @@ export default function ProductPage() {
   if (isError || !p) {
     return (
       <div className="container-page">
+        <BackBar />
         <p className="text-danger">Produit introuvable.</p>
         <div className="mt-3">
           <Link to="/products" className="btn-outline">
@@ -272,6 +302,7 @@ export default function ProductPage() {
 
   return (
     <div className="container-page">
+      <BackBar />
       <div className="product-layout">
         {/* Image à gauche */}
         <div className="card product-media">
@@ -386,8 +417,6 @@ export default function ProductPage() {
               )}
             </div>
           </div>
-
-          {/* Métadonnées — SKU retiré de l'affichage */}
 
           {/* Actions */}
           <div className="actions mt-4">

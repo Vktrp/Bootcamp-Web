@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { createVariants } from "./api";
 
 const SIZES_EU = [
@@ -15,6 +16,28 @@ const SIZES_EU = [
   "46",
 ];
 
+// ── Bouton Retour (même style que ta ProductPage) ─────────────────────────────
+function BackBar() {
+  const navigate = useNavigate();
+  return (
+    <div
+      style={{
+        position: "sticky",
+        top: 55,
+        zIndex: 40,
+        margin: "8px 0 12px",
+        width: "15vw",
+        marginLeft: "calc(60% - 50vw)",
+        paddingLeft: 12,
+      }}
+    >
+      <button className="btn-outline" onClick={() => navigate(-1)}>
+        ← Retour
+      </button>
+    </div>
+  );
+}
+
 export default function CreateProduct() {
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
@@ -28,7 +51,6 @@ export default function CreateProduct() {
   const [idModel, setIdModel] = useState("");
   const [sizes, setSizes] = useState<string[]>([]);
 
-  // utils
   const price = Number(priceStr.replace(",", "."));
   const canSubmit = useMemo(
     () =>
@@ -69,39 +91,19 @@ export default function CreateProduct() {
 
   return (
     <div className="container-page" style={{ maxWidth: 820 }}>
-      {/* styles locaux pour “même UI” que le dashboard */}
+      <BackBar />
       <style>{`
         .form-card { padding: 20px; border-radius: 14px; }
-        .form-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 14px 16px;
-        }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
         @media (max-width: 860px){ .form-grid { grid-template-columns: 1fr; } }
         .form-field { display: flex; flex-direction: column; }
         .form-label { font-size: 12px; font-weight: 600; opacity: .8; }
-        .form-input, .form-select {
-          margin-top: 6px;
-          height: 44px;
-          border-radius: 12px;
-        }
+        .form-input, .form-select { margin-top: 6px; height: 44px; border-radius: 12px; }
         .hint { font-size: 12px; opacity: .7; margin-top: 6px; }
         .sizes-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-        .chip {
-          padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 12px;
-          border: 1px solid rgba(255,255,255,.22); opacity: .75;
-        }
-        .chip.active {
-          background: rgba(191,219,254,.12);
-          border-color: rgba(191,219,254,.45);
-          opacity: 1;
-        }
-        .summary {
-          display:flex; justify-content: space-between; align-items:center;
-          padding: 12px 16px; border-radius: 12px; background: rgba(255,255,255,.03);
-          border: 1px solid rgba(255,255,255,.08);
-          margin-top: 8px;
-        }
+        .chip { padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 12px; border: 1px solid rgba(255,255,255,.22); opacity: .75; }
+        .chip.active { background: rgba(191,219,254,.12); border-color: rgba(191,219,254,.45); opacity: 1; }
+        .summary { display:flex; justify-content: space-between; align-items:center; padding: 12px 16px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); margin-top: 8px; }
       `}</style>
 
       <h1 className="text-2xl font-semibold mb-4">
@@ -109,7 +111,6 @@ export default function CreateProduct() {
       </h1>
 
       <div className="card form-card">
-        {/* grille: champs “légers” en 2 colonnes */}
         <div className="form-grid">
           <div className="form-field">
             <label className="form-label">Nom (modèle)</label>
@@ -219,7 +220,6 @@ export default function CreateProduct() {
           </div>
         </div>
 
-        {/* Tailles */}
         <div className="form-field" style={{ marginTop: 10 }}>
           <label className="form-label">Tailles EU</label>
           <div className="sizes-wrap">
@@ -239,7 +239,6 @@ export default function CreateProduct() {
           )}
         </div>
 
-        {/* Résumé + CTA (même vibe que les encarts KPI) */}
         <div className="summary">
           <div className="text-sm opacity-80">
             Variantes à créer: <strong>{Math.max(1, sizes.length)}</strong>
