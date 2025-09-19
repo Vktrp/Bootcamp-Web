@@ -1,4 +1,4 @@
-import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getProduct, type Product, type Variant } from "./api";
@@ -10,7 +10,6 @@ import {
   type CanonGroup,
   type SimpleVariant,
 } from "../../lib/colors";
-import { slugToGender, inScopeGender, type ScopeGender } from "../../lib/gender";
 
 function eurosFromCents(cents?: number | null) {
   if (cents == null) return "—";
@@ -20,7 +19,6 @@ function eurosFromCents(cents?: number | null) {
   });
 }
 
-// Barre de retour collée à gauche (style que tu utilises déjà)
 function BackBar() {
   const navigate = useNavigate();
   return (
@@ -44,12 +42,7 @@ function BackBar() {
 
 export default function ProductPage() {
   const { id } = useParams<{ id: string }>();
-  const productId = id ?? "";
-
-  // on récupère le genre depuis l'URL (?category=...)
-  const [searchParams] = useSearchParams();
-  const categoryParam = searchParams.get("category") || undefined;
-  const scopeGender: ScopeGender = slugToGender(categoryParam);
+  const productId = decodeURIComponent(id ?? "");
 
   const {
     data: p,
@@ -61,12 +54,36 @@ export default function ProductPage() {
     enabled: Boolean(productId),
   });
 
-  // Variantes dédoublonnées + tri par taille EU (dans toutes les variantes du produit)
-  const allVariants: Variant[] = useMemo(() => {
+  // ===== hooks toujours AU TOP =====
+  const [colorKey, setColorKey] = useState<string>("");
+  const [size, setSize] = useState<string>("");
+  const [fav, setFav] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  const [colorOpen, setColorOpen] = useState(false);
+  const [sizeOpen, setSizeOpen] = useState(false);
+  const colorRef = useRef<HTMLDivElement>(null);
+  const sizeRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (colorRef.current && !colorRef.current.contains(e.target as Node))
+        setColorOpen(false);
+      if (sizeRef.current && !sizeRef.current.contains(e.target as Node))
+        setSizeOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  // Variantes dédoublonnées + tri
+  const variants: Variant[] = useMemo(() => {
     const seen = new Set<string>();
     const arr: Variant[] = [];
     for (const v of p?.variants ?? []) {
-      const k = `${(v as any).sku}|${v.size ?? ""}|${(v as any).colorway ?? ""}`;
+      const k = `${(v as any).sku}|${v.size ?? ""}|${
+        (v as any).colorway ?? ""
+      }`;
       if (seen.has(k)) continue;
       seen.add(k);
       arr.push(v);
@@ -84,13 +101,7 @@ export default function ProductPage() {
     return arr;
   }, [p]);
 
-  // >>> Restreindre par genre (UNISEX reste visible pour tous)
-  const variants: Variant[] = useMemo(() => {
-    if (!scopeGender) return allVariants;
-    return allVariants.filter((v: any) => inScopeGender(v.gender, scopeGender));
-  }, [allVariants, scopeGender]);
-
-  // Groupes couleur sur les variantes filtrées par genre
+  // Groupes couleur
   const colorGroupsMap = useMemo(
     () => groupByCanon(variants as unknown as SimpleVariant[]),
     [variants]
@@ -108,45 +119,20 @@ export default function ProductPage() {
     [colorGroupsMap]
   );
 
-  // États UI
-  const [colorKey, setColorKey] = useState<string>("");
-  const [size, setSize] = useState<string>("");
-  const [fav, setFav] = useState(false);
-  const [adding, setAdding] = useState(false);
-
-  // Dropdowns compacts
-  const [colorOpen, setColorOpen] = useState(false);
-  const [sizeOpen, setSizeOpen] = useState(false);
-  const colorRef = useRef<HTMLDivElement>(null);
-  const sizeRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (colorRef.current && !colorRef.current.contains(e.target as Node))
-        setColorOpen(false);
-      if (sizeRef.current && !sizeRef.current.contains(e.target as Node))
-        setSizeOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
-
-  // Groupe sélectionné
   const selectedGroup: CanonGroup | undefined = useMemo(() => {
     if (!colorKey) return undefined;
     return colorGroupsMap.get(colorKey);
   }, [colorKey, colorGroupsMap]);
 
-  // Tailles dispo pour ce groupe
   const sizesForColor = useMemo(() => {
     const set = new Set<string>();
-    for (const v of selectedGroup?.variants ?? []) set.add(String(v.size ?? ""));
+    for (const v of selectedGroup?.variants ?? [])
+      set.add(String(v.size ?? ""));
     return set;
   }, [selectedGroup]);
 
   const hasAnySize = sizesForColor.size > 0;
 
-  // Variante exacte (taille dans le groupe)
   const exactVariant = useMemo(() => {
     if (!selectedGroup) return undefined;
     return (selectedGroup.variants as Variant[]).find(
@@ -154,24 +140,19 @@ export default function ProductPage() {
     );
   }, [selectedGroup, size]);
 
-  // Prix + image affichés
   const displayPriceCents = exactVariant?.priceCents ?? p?.priceCents ?? null;
   const imageForColor =
     pickGroupImage(selectedGroup) || (p?.image as string | undefined);
 
-  // Init défauts + favori
+  // Inits
   useEffect(() => {
-    // si on change de genre via l'URL, on reset la couleur sélectionnée
-    if (colorOptions.length && !colorKey) setColorKey(colorOptions[0].key);
-
+    if (!colorKey && colorOptions.length) setColorKey(colorOptions[0].key);
     if (!size) {
-      const first =
-        (SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
-          SIZE_RANGES[0] ??
-          "") as string;
+      const first = (SIZE_RANGES.find((s) => sizesForColor.has(String(s))) ??
+        SIZE_RANGES[0] ??
+        "") as string;
       if (first) setSize(String(first));
     }
-
     if (p) {
       const favs = new Set<string>(
         JSON.parse(localStorage.getItem("favs") || "[]")
@@ -180,7 +161,6 @@ export default function ProductPage() {
     }
   }, [colorOptions, sizesForColor, p, colorKey, size]);
 
-  // Ajuster la taille si on change de groupe et que la taille n’existe pas
   useEffect(() => {
     if (!size || !selectedGroup) return;
     if (hasAnySize && !sizesForColor.has(String(size))) {
@@ -192,15 +172,6 @@ export default function ProductPage() {
     }
   }, [selectedGroup, hasAnySize, sizesForColor, size]);
 
-  function toggleFavorite() {
-    if (!p) return;
-    const key = "favs";
-    const favs = new Set<string>(JSON.parse(localStorage.getItem(key) || "[]"));
-    favs.has(p.id) ? favs.delete(p.id) : favs.add(p.id);
-    localStorage.setItem(key, JSON.stringify([...favs]));
-    setFav(favs.has(p.id));
-  }
-
   async function addToCart() {
     if (!p || !exactVariant) return;
     setAdding(true);
@@ -208,16 +179,17 @@ export default function ProductPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (user) {
-        const { error } = await supabase.from("shopping_carts").upsert(
-          {
-            user_id: user.id,
-            product_variant_id: (exactVariant as any).sku,
-            quantity: 1,
-          },
-          { onConflict: "user_id,product_variant_id" }
-        );
+        const { error } = await supabase
+          .from("shopping_carts")
+          .upsert(
+            {
+              user_id: user.id,
+              product_variant_id: (exactVariant as any).sku,
+              quantity: 1,
+            },
+            { onConflict: "user_id,product_variant_id" }
+          );
         if (error) throw error;
       } else {
         type LocalItem = {
@@ -234,13 +206,11 @@ export default function ProductPage() {
           localStorage.getItem(key) || "[]"
         ) as LocalItem[];
         const idv = (exactVariant as any).sku;
-
         const idx = cart.findIndex(
           (i) =>
             i.variant_id === idv &&
             i.size === String((exactVariant as any).size ?? "")
         );
-
         if (idx >= 0) cart[idx].qty += 1;
         else
           cart.push({
@@ -253,7 +223,6 @@ export default function ProductPage() {
             colorway: (exactVariant as any).colorway ?? null,
             qty: 1,
           });
-
         localStorage.setItem(key, JSON.stringify(cart));
       }
     } finally {
@@ -296,7 +265,6 @@ export default function ProductPage() {
     );
   }
 
-  // Libellé de la couleur sélectionnée
   const selectedLabel =
     colorOptions.find((c) => c.key === colorKey)?.label || "Choisir";
 
@@ -304,7 +272,6 @@ export default function ProductPage() {
     <div className="container-page">
       <BackBar />
       <div className="product-layout">
-        {/* Image à gauche */}
         <div className="card product-media">
           <div className="product-media-frame">
             {imageForColor ? (
@@ -320,7 +287,6 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* Fiche à droite */}
         <div className="product-info">
           <div className="product-title">
             <h1 className="title-xl">{p.name}</h1>
@@ -331,7 +297,6 @@ export default function ProductPage() {
             {eurosFromCents(displayPriceCents)}
           </div>
 
-          {/* Couleur (canonisée) */}
           {colorOptions.length > 0 && (
             <div className="mt-4">
               <label>Couleur</label>
@@ -372,7 +337,6 @@ export default function ProductPage() {
             </div>
           )}
 
-          {/* Taille */}
           <div className="mt-4">
             <label>Taille (EU)</label>
             <div className="size-select" ref={sizeRef}>
@@ -395,7 +359,7 @@ export default function ProductPage() {
                     const isSelected = String(size) === String(s);
                     return (
                       <button
-                        key={s}
+                        key={s as any}
                         type="button"
                         className={
                           "size-option" +
@@ -418,7 +382,6 @@ export default function ProductPage() {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="actions mt-4">
             <button
               className="btn"
@@ -429,7 +392,16 @@ export default function ProductPage() {
             </button>
             <button
               className={`btn-outline fav-btn${fav ? " active" : ""}`}
-              onClick={toggleFavorite}
+              onClick={() => {
+                const key = "favs";
+                const favs = new Set<string>(
+                  JSON.parse(localStorage.getItem(key) || "[]")
+                );
+                if (!p) return;
+                favs.has(p.id) ? favs.delete(p.id) : favs.add(p.id);
+                localStorage.setItem(key, JSON.stringify([...favs]));
+                setFav(favs.has(p.id));
+              }}
             >
               {fav ? "♥ Favori" : "♡ Favori"}
             </button>

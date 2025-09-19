@@ -1,35 +1,38 @@
-// src/features/catalog/api.ts
 import { supabase } from "../../lib/supabase";
 
 /** Variantes provenant de product_variant */
 export type Variant = {
-  sku: string; // sku ou fallback variant_id
-  size?: string; // alias de size_eu
-  stock?: number; // (pas en base pour l’instant)
-  priceCents?: number; // retailPrice * 100 si présent, sinon prix produit
+  sku: string;
+  size?: string;
+  stock?: number;
+  priceCents?: number;
   image?: string;
   colorway?: string | null;
+  gender?: "men" | "women" | "infant";
 };
 
-/** Produit provenant de product */
+/** Produit groupé par (silhouette, genre) */
 export type Product = {
-  id: string; // silhouette
-  name: string; // silhouette
+  id: string; // "silhouette::men|women|infant"
+  name: string;
   brand?: string;
-  image?: string;
-  priceCents?: number;
+  image?: string; // image représentative du groupe
+  priceCents?: number; // min(retailPrice) du groupe (fallback basic_price)
+  groupGender?: "men" | "women" | "infant";
   variants?: Variant[];
 };
 
 type ListArgs = { q?: string; categorySlug?: string };
 
-function mapRowToProduct(row: any): Product {
+/* ───────── helpers ───────── */
+function mapRowToProductBase(
+  row: any
+): Pick<Product, "name" | "brand" | "image" | "priceCents"> {
   const priceCents =
     row.basic_price != null
       ? Math.round(Number(row.basic_price) * 100)
       : undefined;
   return {
-    id: row.silhouette,
     name: row.silhouette,
     brand: row.brand ?? undefined,
     image: row.image ?? undefined,
@@ -37,77 +40,147 @@ function mapRowToProduct(row: any): Product {
   };
 }
 
-function genderPattern(slug?: string): string | null {
-  if (!slug) return null;
-  const s = slug.toUpperCase();
-  if (s === "MEN") return "men%";
-  if (s === "WOMEN") return "wom%";
-  if (s === "INFANT") return "infant%";
-  return null;
+function scopeFromSlug(
+  slug?: string | null
+): "men" | "women" | "infant" | undefined {
+  if (!slug) return undefined;
+  const s = slug.toLowerCase();
+  if (s === "men" || s.includes("homme")) return "men";
+  if (s === "women" || s.includes("femme")) return "women";
+  if (s === "infant" || s.includes("enfant") || s.includes("kid"))
+    return "infant";
+  return undefined;
 }
 
-/** Liste des produits (recherche + filtre catégorie via gender de product_variant) */
+function normGender(g: any): "men" | "women" | "infant" | undefined {
+  const v = String(g ?? "").toLowerCase();
+  if (v === "men") return "men";
+  if (v === "women") return "women";
+  if (v === "infant") return "infant";
+  return undefined;
+}
+
+/* ───────── LIST ─────────
+   • Retourne une ligne par (silhouette, genre) strict.
+   • Prix affiché = min(retailPrice) du groupe (fallback basic_price).
+*/
 export async function listProducts({
   q,
   categorySlug,
 }: ListArgs): Promise<Product[]> {
-  try {
-    // 1) Filtrer par genre → silhouettes autorisées
-    let silhouettes: string[] | null = null;
-    const pat = genderPattern(categorySlug);
-    if (pat) {
-      const pv = await supabase
-        .from("product_variant")
-        .select("silhouette")
-        .ilike("gender", pat)
-        .limit(2000);
+  // 1) Charger les variantes utiles (on reste côté variantes pour avoir genre + prix)
+  const scope = scopeFromSlug(categorySlug);
 
-      if (pv.error) {
-        console.error("[listProducts] product_variant error:", pv.error);
-      } else if (pv.data?.length) {
-        silhouettes = Array.from(
-          new Set(pv.data.map((r: any) => r.silhouette).filter(Boolean))
-        );
-      } else {
-        return [];
-      }
-    }
+  let pvQuery = supabase
+    .from("product_variant")
+    .select("silhouette, gender, retailPrice, image")
+    .limit(100000); // confortable (15k lignes chez toi)
 
-    // 2) Charger les produits
-    let qy = supabase
-      .from("product")
-      .select("silhouette,brand,image,basic_price")
-      .limit(500);
+  // Pas de heuristique : on filtre directement au niveau SQL si une catégorie est demandée
+  if (scope) {
+    pvQuery = pvQuery.eq("gender", scope);
+  }
 
-    if (q && q.trim()) {
-      const s = q.trim();
-      qy = qy.or(`silhouette.ilike.%${s}%,brand.ilike.%${s}%`) as any;
-    }
-    if (silhouettes?.length) {
-      qy = qy.in("silhouette", silhouettes) as any;
-    }
-
-    const res = await qy;
-
-    if (res.error) {
-      console.error("[listProducts] product error:", res.error);
-      return [];
-    }
-
-    return (res.data ?? []).map(mapRowToProduct);
-  } catch (e) {
-    console.error("[listProducts] unexpected:", e);
+  const pv = await pvQuery;
+  if (pv.error) {
+    console.error("[listProducts] product_variant error:", pv.error);
     return [];
   }
+
+  type GroupAgg = { minPriceCents?: number; sampleImage?: string };
+  const groups = new Map<string, GroupAgg>(); // key = `${silhouette}::${g}`
+
+  for (const r of pv.data ?? []) {
+    const silhouette: string | undefined = (r as any).silhouette ?? undefined;
+    const g = normGender((r as any).gender);
+    if (!silhouette || !g) continue; // on exige un genre propre
+
+    const key = `${silhouette}::${g}`;
+    const priceRaw = (r as any).retailPrice;
+    const priceCents =
+      priceRaw != null ? Math.round(Number(priceRaw) * 100) : undefined;
+
+    const prev = groups.get(key) ?? {};
+    const nextMin =
+      priceCents != null &&
+      (prev.minPriceCents == null || priceCents < prev.minPriceCents)
+        ? priceCents
+        : prev.minPriceCents;
+    const nextImg = prev.sampleImage ?? (r as any).image ?? undefined;
+
+    groups.set(key, { minPriceCents: nextMin, sampleImage: nextImg });
+  }
+
+  if (groups.size === 0) return [];
+
+  // 2) Charger la table product pour les silhouettes impliquées (+ recherche q)
+  const silhouettes = Array.from(
+    new Set(Array.from(groups.keys()).map((k) => k.split("::")[0]))
+  );
+
+  let prQuery = supabase
+    .from("product")
+    .select("silhouette,brand,image,basic_price")
+    .in("silhouette", silhouettes)
+    .limit(10000);
+
+  if (q && q.trim()) {
+    const s = q.trim();
+    prQuery = prQuery.or(`silhouette.ilike.%${s}%,brand.ilike.%${s}%`) as any;
+  }
+
+  const pr = await prQuery;
+  if (pr.error) {
+    console.error("[listProducts] product error:", pr.error);
+    return [];
+  }
+
+  const infoBySil = new Map(
+    (pr.data ?? []).map((r: any) => [r.silhouette, mapRowToProductBase(r)])
+  );
+
+  // 3) Construire les cartes
+  const out: Product[] = [];
+  for (const [key, agg] of groups.entries()) {
+    const [silhouette, g] = key.split("::");
+    const base = infoBySil.get(silhouette);
+    if (!base) continue;
+
+    out.push({
+      id: key,
+      name: base.name,
+      brand: base.brand,
+      image: agg.sampleImage ?? base.image,
+      priceCents: agg.minPriceCents ?? base.priceCents,
+      groupGender: g as Product["groupGender"],
+    });
+  }
+
+  // Tri stable
+  const order = { men: 0, women: 1, infant: 2 } as Record<string, number>;
+  out.sort((a, b) => {
+    if (a.name !== b.name) return a.name.localeCompare(b.name);
+    return (
+      (order[a.groupGender ?? "men"] ?? 9) -
+      (order[b.groupGender ?? "men"] ?? 9)
+    );
+  });
+
+  return out;
 }
 
-/** Détail produit + variantes (dédoublonnées et triées par taille EU) */
+/* ───────── DETAIL ─────────
+   id = "silhouette::genre" → on charge uniquement les variantes de CE genre.
+*/
 export async function getProduct(id: string): Promise<Product> {
-  // id = silhouette
+  const [silhouette, scopeRaw] = id.split("::");
+  const scope = normGender(scopeRaw) as "men" | "women" | "infant" | undefined;
+  const sil = silhouette || id;
+
   const pr = await supabase
     .from("product")
     .select("silhouette,brand,image,basic_price")
-    .eq("silhouette", id)
+    .eq("silhouette", sil)
     .maybeSingle();
 
   if (pr.error || !pr.data) {
@@ -115,46 +188,24 @@ export async function getProduct(id: string): Promise<Product> {
     throw new Error("Product not found");
   }
 
-  const prod = mapRowToProduct(pr.data);
+  const base = mapRowToProductBase(pr.data);
 
-  // ============= Variantes =============
-  // 1) par silhouette
-  const { data: rowsBySilhouette, error: errBySilhouette } = await supabase
+  const { data: rows, error } = await supabase
     .from("product_variant")
     .select(
-      "variant_id, sku, size:size_eu, retailPrice, image, silhouette, name, colorway"
+      "variant_id, sku, size:size_eu, retailPrice, image, colorway, gender"
     )
-    .eq("silhouette", pr.data.silhouette)
+    .eq("silhouette", sil)
+    .eq("gender", scope ?? "") // genre strict
     .order("size_eu", { ascending: true })
-    .limit(1000);
+    .limit(2000);
 
-  // 2) fallback par name ~ silhouette si rien trouvé
-  let rows = rowsBySilhouette ?? [];
-  let firstError = errBySilhouette || null;
+  if (error) console.error("[getProduct] product_variant error:", error);
 
-  if (!rows.length) {
-    const { data: rowsByName, error: errByName } = await supabase
-      .from("product_variant")
-      .select(
-        "variant_id, sku, size:size_eu, retailPrice, image, silhouette, name, colorway"
-      )
-      .ilike("name", `%${pr.data.silhouette}%`)
-      .order("size_eu", { ascending: true })
-      .limit(1000);
-
-    rows = rowsByName ?? [];
-    if (!firstError) firstError = errByName || null;
-  }
-
-  if (firstError) {
-    console.error("[getProduct] product_variant error:", firstError);
-  }
-
-  // 3) dédoublonnage (variant_id/sku + size)
+  // dédoublonnage + mapping
   const seen = new Set<string>();
   const variants: Variant[] = [];
-
-  for (const v of rows) {
+  for (const v of rows ?? []) {
     const sku: string = (v as any).sku ?? (v as any).variant_id ?? "";
     const size: string | undefined = (v as any).size ?? undefined;
     const uniq = `${(v as any).variant_id ?? sku}|${size ?? ""}`;
@@ -164,7 +215,7 @@ export async function getProduct(id: string): Promise<Product> {
     const priceCents =
       (v as any).retailPrice != null
         ? Math.round(Number((v as any).retailPrice) * 100)
-        : prod.priceCents;
+        : base.priceCents;
 
     variants.push({
       sku,
@@ -172,12 +223,13 @@ export async function getProduct(id: string): Promise<Product> {
       priceCents,
       image: (v as any).image ?? undefined,
       stock: undefined,
-      colorway: (v as any).colorway ?? null, // ← important pour le sélecteur Couleur
+      colorway: (v as any).colorway ?? null,
+      gender: normGender((v as any).gender),
     });
   }
 
-  // 4) tri par taille EU
-  const byEuSize = (a: Variant, b: Variant): number => {
+  // tri EU
+  variants.sort((a, b) => {
     const pa = parseFloat(String(a.size ?? "").replace(",", "."));
     const pb = parseFloat(String(b.size ?? "").replace(",", "."));
     const aNum = !Number.isNaN(pa);
@@ -186,9 +238,15 @@ export async function getProduct(id: string): Promise<Product> {
     if (aNum) return -1;
     if (bNum) return 1;
     return String(a.size ?? "").localeCompare(String(b.size ?? ""));
-  };
-  variants.sort(byEuSize);
+  });
 
-  prod.variants = variants;
-  return prod;
+  return {
+    id,
+    name: base.name,
+    brand: base.brand,
+    image: base.image,
+    priceCents: base.priceCents,
+    groupGender: scope,
+    variants,
+  };
 }
