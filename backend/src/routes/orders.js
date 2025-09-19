@@ -1,10 +1,28 @@
 import { Router } from "express";
-import { addOrderItem } from "../controllers/orderController.js";
-import { authMiddleware } from "../middleware/authMiddleware.js";
+import {
+  createOrder,
+  addOrderItem,
+  getOrderItems,
+  getMyOrders,
+  getAllOrders,
+} from "../controllers/orderController.js";
+import { authMiddleware, isAdmin } from "../middleware/authMiddleware.js";
 
 const router = Router();
 
-// Un client connecté peut ajouter un article à une commande
+// Créer une commande (client)
+router.post("/", authMiddleware, createOrder);
+
+// Ajouter un article à une commande
 router.post("/items", authMiddleware, addOrderItem);
+
+// Voir les articles d'une commande
+router.get("/:id/items", authMiddleware, getOrderItems);
+
+// Voir MES commandes (client)
+router.get("/my", authMiddleware, getMyOrders);
+
+// Voir TOUTES les commandes (admin)
+router.get("/", authMiddleware, isAdmin, getAllOrders);
 
 export default router;

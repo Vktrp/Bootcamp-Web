@@ -9,6 +9,7 @@ import cartRoutes from "./routes/cart.js";
 import orderRoutes from "./routes/orders.js";
 import inventoryRoutes from "./routes/inventory.js";
 
+
 // Charger les variables d'environnement
 dotenv.config();
 
