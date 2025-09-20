@@ -1,4 +1,6 @@
+// src/routes/inventory.js
 import { Router } from "express";
+import { authMiddleware, isAdmin } from "../middleware/authMiddleware.js";
 import {
   updateInventory,
   decrementInventory,
@@ -6,18 +8,18 @@ import {
   getAllInventory,
 } from "../controllers/inventoryController.js";
 
-import { authMiddleware, isAdmin } from "../middleware/authMiddleware.js";
-
 const router = Router();
 
-// 🔒 accessible uniquement aux admins
+// Admin: mettre à jour le stock
 router.put("/", authMiddleware, isAdmin, updateInventory);
 
-// ✅ accessible aux clients connectés
+// Décrémenter après commande (authentifié mais pas forcément admin)
 router.post("/decrement", authMiddleware, decrementInventory);
 
-// 📦 accessible à tous (lecture seule)
-router.get("/", getAllInventory);
-router.get("/:variant_id", getInventoryByVariant);
+// Lire une variante précise
+router.get("/:variant_id", authMiddleware, getInventoryByVariant);
+
+// Lister tout l’inventaire (admin)
+router.get("/", authMiddleware, isAdmin, getAllInventory);
 
 export default router;

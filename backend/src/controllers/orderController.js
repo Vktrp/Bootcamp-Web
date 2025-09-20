@@ -71,7 +71,9 @@ export const getOrderItems = async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Aucun article trouvé pour cette commande" });
+      return res
+        .status(404)
+        .json({ message: "Aucun article trouvé pour cette commande" });
     }
 
     res.json(result.rows);
@@ -153,10 +155,9 @@ export const getMyOrders = async (req, res) => {
       [userId]
     );
 
-
     // Regrouper commandes + items en JSON structuré
     const orders = {};
-    result.rows.forEach(row => {
+    result.rows.forEach((row) => {
       if (!orders[row.order_id]) {
         orders[row.order_id] = {
           id: row.order_id,
@@ -166,7 +167,7 @@ export const getMyOrders = async (req, res) => {
           payment_status: row.payment_status,
           created_at: row.created_at,
           updated_at: row.updated_at,
-          items: []
+          items: [],
         };
       }
       if (row.item_id) {
@@ -181,7 +182,7 @@ export const getMyOrders = async (req, res) => {
           size_eu: row.size_eu,
           brand: row.brand,
           silhouette: row.silhouette,
-          gender: row.gender
+          gender: row.gender,
         });
       }
     });
@@ -192,5 +193,3 @@ export const getMyOrders = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-
