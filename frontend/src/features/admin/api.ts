@@ -1,17 +1,24 @@
-// src/features/admin/api.ts
+// frontend/src/features/admin/api.ts
 
- import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
- import { API_URL } from "@/lib/utils";
+import { API_URL } from "@/lib/utils";
 
- import { getToken } from "@/features/auth/api";
+import { getToken } from "@/features/auth/api";
 
- /* ---------- KPIs ---------- */
+// ---------- KPIs ----------
 
- export type Kpis = { products: number; variants: number; orders7d: number; users: number; };
+export type Kpis = {
+  products: number;
 
- async function countExact(table: string, where?: (q: any) => any) {
+  variants: number;
 
+  orders7d: number;
+
+  users: number;
+};
+
+async function countExact(table: string, where?: (q: any) => any) {
   let q: any = supabase.from(table).select("*", { count: "exact", head: true });
 
   if (where) q = where(q);
@@ -19,51 +26,55 @@
   const { count, error } = await q;
 
   return error || typeof count !== "number" ? 0 : count!;
+}
 
- }
-
- export async function fetchKpis(): Promise<Kpis> {
-
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+export async function fetchKpis(): Promise<Kpis> {
+  const sevenDaysAgo = new Date(
+    Date.now() - 7 * 24 * 3600 * 1000
+  ).toISOString();
 
   let products = await countExact("product").catch(() => 0);
 
   if (!products) {
+    const { data } = await supabase
 
-    const { data } = await supabase.from("product_variant").select("id_model").not("id_model", "is", null);
+      .from("product_variant")
 
-    products = data ? new Set((data as any[]).map((d: any) => d.id_model)).size : 0;
+      .select("id_model")
 
+      .not("id_model", "is", null);
+
+    products = data
+      ? new Set((data as any[]).map((d: any) => d.id_model)).size
+      : 0;
   }
 
   const variants = await countExact("product_variant");
 
-  const orders7d = await countExact("orders", (q) => q.gte("created_at", sevenDaysAgo));
+  const orders7d = await countExact("orders", (q) =>
+    q.gte("created_at", sevenDaysAgo)
+  );
 
   const users = await countExact("users");
 
   return { products, variants, orders7d, users };
+}
 
- }
+// ---------- Recent orders ----------
 
- /* ---------- Recent orders ---------- */
-
- export type RecentOrder = {
-
+export type RecentOrder = {
   id: string;
 
   status: string | null;
 
   payment_status: string | null;
 
-  total_amount: number | null;
+  total_amount: number | null; // euros
 
   created_at: string;
+};
 
- };
-
- export async function fetchRecentOrders(): Promise<RecentOrder[]> {
-
+export async function fetchRecentOrders(): Promise<RecentOrder[]> {
   const { data, error } = await supabase
 
     .from("orders")
@@ -75,13 +86,11 @@
     .limit(5);
 
   return error || !data ? [] : (data as any);
+}
 
- }
+// ---------- Stock / Inventory ----------
 
- /* ---------- Stock ---------- */
-
- export type StockRow = {
-
+export type StockRow = {
   variant_id: string;
 
   sku: string | null;
@@ -91,17 +100,13 @@
   size_eu: string | null;
 
   stock: number;
+};
 
- };
-
- export async function countVariants(): Promise<number> {
-
+export async function countVariants(): Promise<number> {
   return await countExact("product_variant");
+}
 
- }
-
- export async function listStock(limit = 50, offset = 0): Promise<StockRow[]> {
-
+export async function listStock(limit = 50, offset = 0): Promise<StockRow[]> {
   const { data: variants, error: errV } = await supabase
 
     .from("product_variant")
@@ -116,14 +121,21 @@
 
   const ids = (variants as any[]).map((v) => v.variant_id);
 
-  const { data: inv } = await supabase.from("inventory").select("variant_id, quantity").in("variant_id", ids);
+  const { data: inv } = await supabase
+
+    .from("inventory")
+
+    .select("variant_id, quantity")
+
+    .in("variant_id", ids);
 
   const byId: Record<string, number> = {};
 
-  if (inv) for (const it of inv as any[]) byId[it.variant_id] = Number(it.quantity ?? 0);
+  if (inv)
+    for (const it of inv as any[])
+      byId[it.variant_id] = Number(it.quantity ?? 0);
 
   return (variants as any[]).map((v) => ({
-
     variant_id: v.variant_id,
 
     sku: v.sku ?? null,
@@ -133,27 +145,34 @@
     size_eu: v.size_eu ?? null,
 
     stock: byId[v.variant_id] ?? 0,
-
   }));
+}
 
- }
+export async function adjustInventory(variant_id: string, delta: number) {
+  const { data } = await supabase
 
- export async function adjustInventory(variant_id: string, delta: number) {
+    .from("inventory")
 
-  const { data } = await supabase.from("inventory").select("quantity").eq("variant_id", variant_id).maybeSingle();
+    .select("quantity")
+
+    .eq("variant_id", variant_id)
+
+    .maybeSingle();
 
   const next = Number(data?.quantity ?? 0) + delta;
 
-  await supabase.from("inventory").upsert({ variant_id, quantity: next }, { onConflict: "variant_id" });
+  await supabase
+
+    .from("inventory")
+
+    .upsert({ variant_id, quantity: next }, { onConflict: "variant_id" });
 
   return next;
+}
 
- }
+// ---------- Product creation (variants) ----------
 
- /* ---------- Product creation ---------- */
-
- export type CreateVariantInput = {
-
+export type CreateVariantInput = {
   name: string;
 
   brand: string;
@@ -164,40 +183,32 @@
 
   colorway?: string;
 
-  price: number;
+  price: number; // euros
 
   image?: string | null;
 
   idModel?: string;
 
-  sizes: string[];
+  sizes: string[]; // EU sizes
+};
 
- };
-
- function randomId() {
-
+function randomId() {
   return "VAR-" + Math.random().toString(36).slice(2, 10).toUpperCase();
+}
 
- }
-
- export async function createVariants(input: CreateVariantInput) {
-
+export async function createVariants(input: CreateVariantInput) {
   const rows = input.sizes.map((size) => {
-
     const variant_id = randomId();
 
     const sku = [
-
       input.brand?.slice(0, 3)?.toUpperCase() ?? "BRD",
 
       size,
 
       Date.now().toString().slice(-5),
-
     ].join("-");
 
     return {
-
       variant_id,
 
       id_model: input.idModel || input.name,
@@ -219,9 +230,7 @@
       image: input.image || null,
 
       retailPrice: input.price,
-
     };
-
   });
 
   const { error } = await supabase.from("product_variant").insert(rows);
@@ -229,14 +238,16 @@
   if (error) throw error;
 
   return rows.length;
+}
 
- }
+// ---------- Users ----------
 
- /* ---------- Users ---------- */
+
+ export type Role = "admin" | "seller" | "customer";
 
  export type UserRow = {
 
-  id: string;
+  id: string | number;
 
   email: string | null;
 
@@ -244,7 +255,7 @@
 
   last_name: string | null;
 
-  role: "admin" | "seller" | "customer" | null;
+  role: string | null;
 
   is_active: boolean | null;
 
@@ -252,8 +263,7 @@
 
  };
 
- export async function listUsers(limit = 50, offset = 0): Promise<UserRow[]> {
-
+export async function listUsers(limit = 50, offset = 0): Promise<UserRow[]> {
   const { data, error } = await supabase
 
     .from("users")
@@ -265,42 +275,21 @@
     .range(offset, offset + limit - 1);
 
   return error || !data ? [] : (data as any[]);
+}
 
- }
+/** UPDATE via backend (évite RLS/anon) */
 
- /* ---------- Admin mutations via backend ---------- */
+export async function updateUser(
 
- export async function updateUserRole(userId: string, role: "admin" | "seller" | "customer"): Promise<void> {
+  id: number | string,
 
-  const res = await fetch(`${API_URL}/admin/users/${userId}/role`, {
+  patch: { role?: Role; is_active?: boolean }
 
-    method: "PATCH",
+ ): Promise<UserRow> {
 
-    headers: {
+  const userId = typeof id === "string" ? Number(id) : id; // l’API attend un int
 
-      "Content-Type": "application/json",
-
-      Authorization: `Bearer ${getToken()}`,
-
-    },
-
-    body: JSON.stringify({ role }),
-
-  });
-
-  if (!res.ok) {
-
-    const msg = await res.text().catch(() => "");
-
-    throw new Error(msg || "Update role failed");
-
-  }
-
- }
-
- export async function setUserActive(userId: string, is_active: boolean): Promise<void> {
-
-  const res = await fetch(`${API_URL}/admin/users/${userId}/active`, {
+  const res = await fetch(`${API_URL}/admin/users/${userId}`, {
 
     method: "PATCH",
 
@@ -308,20 +297,18 @@
 
       "Content-Type": "application/json",
 
-      Authorization: `Bearer ${getToken()}`,
+      Authorization: `Bearer ${getToken() || ""}`,
 
     },
 
-    body: JSON.stringify({ is_active }),
+    body: JSON.stringify(patch),
 
   });
 
-  if (!res.ok) {
+  const data = await res.json().catch(() => ({}));
 
-    const msg = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(data?.message || "Erreur serveur");
 
-    throw new Error(msg || "Update active failed");
-
-  }
+  return data as UserRow;
 
  }

@@ -1,47 +1,40 @@
-// src/features/admin/UsersTable.tsx
+import { useState } from "react";
 
- import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
- import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
- import {
+import { listUsers, updateUser, type Role, type UserRow } from "./api";
 
-  listUsers,
+/* UI bits */
 
-  updateUserRole,
+function Badge({
+  kind,
 
-  setUserActive,
+  children,
+}: {
+  kind: "ok" | "warn" | "error" | "info";
 
-  type UserRow,
-
- } from "./api";
-
- type Role = "admin" | "seller" | "customer";
-
- function StatusBadge({ active }: { active: boolean }) {
-
-  const kind = active ? "ok" : "error";
-
-  const label = active ? "Actif" : "Inactif";
-
+  children: React.ReactNode;
+}) {
   const palette: Record<string, { bg: string; fg: string }> = {
+    ok: { bg: "rgba(34,197,94,.18)", fg: "rgb(187,247,208)" },
 
-    ok: { bg: "rgba(34,197,94,.18)", fg: "rgb(34,197,94)" },
+    warn: { bg: "rgba(234,179,8,.22)", fg: "rgb(253,230,138)" },
 
-    error: { bg: "rgba(239,68,68,.20)", fg: "rgb(239,68,68)" },
+    error: { bg: "rgba(239,68,68,.20)", fg: "rgb(254,202,202)" },
 
+    info: { bg: "rgba(59,130,246,.20)", fg: "rgb(191,219,254)" },
   };
 
   return (
-<span
-
+    <span
       style={{
-
         background: palette[kind].bg,
 
         color: palette[kind].fg,
 
-        padding: "4px 8px",
+        padding: "4px 9px",
 
         fontSize: 12,
 
@@ -54,351 +47,396 @@
         whiteSpace: "nowrap",
 
         display: "inline-block",
-
       }}
->
-
-      {label}
-</span>
-
+    >
+      {children}
+    </span>
   );
+}
 
- }
-
- function fmtDate(iso?: string | null) {
-
+function fmtDate(iso?: string | null) {
   if (!iso) return "—";
 
   const d = new Date(iso);
 
-  return d.toLocaleDateString("fr-FR", { year: "numeric", month: "2-digit", day: "2-digit" });
+  return d.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
- }
+const ROLE_OPTIONS: Role[] = ["admin", "seller", "customer"];
 
- export default function UsersTable() {
+function Switch({
+  checked,
 
+  onChange,
+}: {
+  checked: boolean;
+
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      aria-pressed={checked}
+      style={{
+        width: 56,
+
+        height: 30,
+
+        borderRadius: 999,
+
+        background: checked ? "rgba(34,197,94,.35)" : "rgba(148,163,184,.25)",
+
+        border: "1px solid rgba(255,255,255,.15)",
+
+        display: "inline-flex",
+
+        alignItems: "center",
+
+        padding: 3,
+
+        transition: "all .15s ease",
+      }}
+    >
+      <span
+        style={{
+          width: 24,
+
+          height: 24,
+
+          borderRadius: "50%",
+
+          background: "rgba(255,255,255,.9)",
+
+          transform: `translateX(${checked ? 26 : 0}px)`,
+
+          transition: "transform .15s ease",
+        }}
+      />
+    </button>
+  );
+}
+
+/* Back */
+
+function BackBar() {
+  const navigate = useNavigate();
+
+  return (
+    <div
+      style={{
+        position: "sticky",
+
+        top: 55,
+
+        zIndex: 40,
+
+        margin: "8px 0 12px",
+
+        width: "15vw",
+
+        marginLeft: "calc(60% - 50vw)",
+
+        paddingLeft: 12,
+      }}
+    >
+      <button className="btn-outline" onClick={() => navigate(-1)}>
+        ← Retour
+      </button>
+    </div>
+  );
+}
+
+/* Draft typed with Role (not string) */
+
+type Draft = { role?: Role; is_active?: boolean; dirty?: boolean };
+
+export default function UsersTable() {
   const qc = useQueryClient();
 
-  const [limit] = useState(50);
+  const key = ["admin-users"];
 
-  const [offset] = useState(0);
+  const { data = [], isFetching } = useQuery({
+    queryKey: key,
 
-  const { data = [], isLoading, error } = useQuery<UserRow[]>({
-
-    queryKey: ["admin-users", { limit, offset }],
-
-    queryFn: () => listUsers(limit, offset),
-
-    initialData: [],
-
+    queryFn: () => listUsers(200, 0),
   });
-
-  // état local d'édition par ligne
-
-  type Draft = { role: Role; is_active: boolean; dirty: boolean; saving?: boolean; error?: string | null };
 
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
 
-  const rows = useMemo(() => data, [data]);
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
 
+  const value = <K extends keyof Draft | keyof UserRow>(u: UserRow, k: K) =>
+    (drafts[String(u.id)] as any)?.[k] ?? (u as any)[k];
 
-  // types de rappel
-
- type Role = "admin" | "seller" | "customer";
-
-
- // -----------------------------
-
- // Remplace ta fonction setDraft
-
- // -----------------------------
-
- const setDraft = (id: string, patch: Partial<Draft>) =>
-
-  setDrafts((prev) => {
-
-    // point de départ = brouillon existant OU valeurs par défaut
-
-    const base: Draft = prev[id]
-
-      ? prev[id]
-
-      : {
-
-          role: "customer",
-
-          is_active: false,
-
-          dirty: false,
-
-        };
-
-    // IMPORTANT : un seul objet, un seul 'dirty'
-
-    return {
-
+  const setDraft = (id: string | number, patch: Partial<Draft>) =>
+    setDrafts((prev) => ({
       ...prev,
 
-      [id]: {
+      [String(id)]: { ...(prev[String(id)] ?? {}), ...patch, dirty: true },
+    }));
 
-        ...base,        // garde l’existant s’il y en a
+  const hasChanges = (u: UserRow) => {
+    const d = drafts[String(u.id)];
 
-        ...patch,       // applique les modifs passées à setDraft(...)
+    if (!d) return false;
 
-        dirty: true,    // marque la ligne comme modifiée
+    const currentRole = ((u.role as Role | null) ?? "customer") as Role;
 
-      },
+    const changedRole = d.role !== undefined && d.role !== currentRole;
 
-    };
+    const changedActive =
+      d.is_active !== undefined && d.is_active !== !!u.is_active;
 
-  });
-
- // -------------------------------------------------------
-
- // Optionnel mais conseillé : sécurise startDraftIfNeeded
-
- // -------------------------------------------------------
-
- const startDraftIfNeeded = (u: UserRow) =>
-
-  setDrafts((prev) =>
-
-    prev[u.id]
-
-      ? prev
-
-      : {
-
-          ...prev,
-
-          [u.id]: {
-
-            role: (u.role ?? "customer") as Role,
-
-            is_active: !!u.is_active,
-
-            dirty: false,
-
-          },
-
-        }
-
-  );
-  
-  const onChangeRole = (u: UserRow, role: Role) => {
-
-    startDraftIfNeeded(u);
-
-    setDraft(u.id, { role });
-
+    return !!d.dirty && (changedRole || changedActive);
   };
 
-  const onToggleActive = (u: UserRow, next: boolean) => {
+  const saveOne = async (u: UserRow) => {
+    if (!hasChanges(u)) return;
 
-    startDraftIfNeeded(u);
+    setSaving((s) => ({ ...s, [String(u.id)]: true }));
 
-    setDraft(u.id, { is_active: next });
+    // Build payload
 
-  };
+    const d = drafts[String(u.id)] ?? {};
 
-  const onSave = async (u: UserRow) => {
+    const currentRole = ((u.role as Role | null) ?? "customer") as Role;
 
-    const d = drafts[u.id];
+    const payload: Partial<{ role: Role; is_active: boolean }> = {};
 
-    if (!d || (!d.dirty && d.saving === false)) return;
+    if (d.role !== undefined && d.role !== currentRole)
+      payload.role = d.role as Role;
 
-    setDraft(u.id, { saving: true, error: null });
+    if (d.is_active !== undefined && d.is_active !== !!u.is_active)
+      payload.is_active = d.is_active!;
+
+    // Optimistic update
+
+    const prev = qc.getQueryData<UserRow[]>(key) || [];
+
+    const snapshot = [...prev];
+
+    qc.setQueryData<UserRow[]>(key, (old = []) =>
+      old.map((row) =>
+        String(row.id) === String(u.id) ? { ...row, ...payload } : row
+      )
+    );
 
     try {
+      await updateUser(u.id, payload);
 
-      // applique seulement ce qui change
+      await qc.invalidateQueries({ queryKey: key });
 
-      if (d.role !== (u.role ?? "customer")) {
+      setDrafts((p) => {
+        const n = { ...p };
 
-        await updateUserRole(u.id, d.role);
+        delete n[String(u.id)];
 
-      }
-
-      if (Boolean(d.is_active) !== Boolean(u.is_active)) {
-
-        await setUserActive(u.id, d.is_active);
-
-      }
-
-      await qc.invalidateQueries({ queryKey: ["admin-users"] });
-
-      setDrafts((prev) => ({ ...prev, [u.id]: { ...prev[u.id], dirty: false, saving: false } as Draft }));
-
+        return n;
+      });
     } catch (e: any) {
+      // rollback
 
-      setDrafts((prev) => ({ ...prev, [u.id]: { ...prev[u.id], saving: false, error: e?.message || "Erreur" } as Draft }));
+      qc.setQueryData<UserRow[]>(key, snapshot);
 
+      console.error(e);
+
+      alert(e?.message || "Échec de l’enregistrement");
+    } finally {
+      setSaving((s) => ({ ...s, [String(u.id)]: false }));
     }
+  };
 
+  const thLeft = { textAlign: "left" as const };
+
+  const thRight = { textAlign: "right" as const };
+
+  const tdLeft = {
+    textAlign: "left" as const,
+    verticalAlign: "middle" as const,
+  };
+
+  const tdRight = {
+    textAlign: "right" as const,
+    verticalAlign: "middle" as const,
   };
 
   return (
-<div className="container-page admin-page" style={{ maxWidth: 1100 }}>
-<style>{`
+    <div className="container-page admin-page" style={{ maxWidth: 1100 }}>
+      <BackBar />
+      <style>{`
 
-        .admin-table { font-variant-numeric: tabular-nums; width: 100%; border-collapse: separate; border-spacing: 0; }
+        .admin-table { font-variant-numeric: tabular-nums; }
 
         .admin-table thead th {
 
-          font-weight: 700; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left;
+          font-weight: 700;
+
+          padding: 12px 16px;
+
+          border-bottom: 1px solid rgba(255,255,255,.08);
 
         }
 
         .admin-table tbody td {
 
-          padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: middle;
+          padding: 12px 16px;
+
+          border-bottom: 1px solid rgba(255,255,255,.05);
 
         }
 
         .admin-table tbody tr:last-child td { border-bottom: 0; }
 
-        .table-frame { border-radius: 14px; overflow: auto; }
+        .admin-table th, .admin-table td { white-space: nowrap; }
 
-        .role-select { min-width: 150px; }
+        .table-frame { border-radius: 14px; }
 
-        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .role-select {
 
-        .switch input { opacity: 0; width: 0; height: 0; }
+          background: rgba(255,255,255,.04);
 
-        .slider { position: absolute; cursor: pointer; inset: 0; background: #e5e7eb; border-radius: 999px; transition: .2s; }
+          border: 1px solid rgba(255,255,255,.12);
 
-        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+          color: #fff;
 
-        input:checked + .slider { background: #22c55e; }
+          padding: 6px 10px;
 
-        input:checked + .slider:before { transform: translateX(20px); }
+          border-radius: 10px;
 
-        .save-btn { font-weight: 700; }
-
-        .error { color: #c1121f; font-size: 12px; margin-top: 4px; }
+        }
 
       `}</style>
-<h1 className="text-xl font-semibold mb-3">Utilisateurs</h1>
+      <div className="card admin-wrapper" style={{ marginTop: 6 }}>
+        <div className="table-frame">
+          <div className="table-scroll">
+            <table
+              className="min-w-full admin-table"
+              style={{
+                tableLayout: "fixed",
 
-      {isLoading && <div className="card p-4">Chargement…</div>}
+                width: "100%",
 
-      {error && <div className="card p-4 text-danger">Erreur de chargement.</div>}
+                fontSize: "clamp(12px, 1.4vw, 14px)",
 
-      {!isLoading && !error && (
-<div className="card admin-wrapper" style={{ marginTop: 6 }}>
+                lineHeight: 1.5,
 
-          {rows.length === 0 ? (
-<div className="muted">Aucun utilisateur.</div>
+                borderCollapse: "separate",
 
-          ) : (
-<div className="table-frame">
-<table className="admin-table">
-<colgroup>
-<col style={{ width: 260 }} />
-<col style={{ width: 160 }} />
-<col style={{ width: 140 }} />
-<col style={{ width: 120 }} />
-<col style={{ width: 160 }} />
-<col style={{ width: 140 }} />
-</colgroup>
-<thead>
-<tr>
-<th>Email</th>
-<th>Nom</th>
-<th>Rôle</th>
-<th>Actif</th>
-<th>Créé le</th>
-<th style={{ textAlign: "right" }}>Actions</th>
-</tr>
-</thead>
-<tbody>
+                borderSpacing: 0,
+              }}
+            >
+              <colgroup>
+                <col style={{ width: 260 }} />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 160 }} />
+                <col style={{ width: 130 }} />
+                <col style={{ width: 120 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={thLeft}>Nom</th>
+                  <th style={thLeft}>Rôle</th>
+                  <th style={thLeft}>Actif</th>
+                  <th style={thLeft}>Créé le</th>
+                  <th style={thRight}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isFetching && (
+                  <tr>
+                    <td colSpan={5} className="muted" style={{ padding: 18 }}>
+                      Chargement…
+                    </td>
+                  </tr>
+                )}
 
-                  {rows.map((u) => {
+                {!isFetching && data.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="muted" style={{ padding: 18 }}>
+                      Aucun utilisateur.
+                    </td>
+                  </tr>
+                )}
 
-                    const d = drafts[u.id] ?? {
+                {data.map((u) => {
+                  const fullName =
+                    [u.first_name, u.last_name].filter(Boolean).join(" ") ||
+                    "—";
 
-                      role: (u.role ?? "customer") as Role,
+                  const active = !!value(u, "is_active");
 
-                      is_active: !!u.is_active,
+                  const role = ((value(u, "role") as string) ||
+                    "customer") as Role;
 
-                      dirty: false,
+                  const dirty = hasChanges(u);
 
-                    };
+                  const isSaving = !!saving[String(u.id)];
 
-                    const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || "—";
-
-                    const dirty =
-
-                      d.dirty &&
-
-                      (d.role !== (u.role ?? "customer") || Boolean(d.is_active) !== Boolean(u.is_active));
-
-                    return (
-<tr key={u.id}>
-<td className="font-mono">{u.email || "—"}</td>
-<td>{name}</td>
-<td>
-<select
-
-                            className="input role-select"
-
-                            value={d.role}
-
-                            onChange={(e) => onChangeRole(u, e.target.value as Role)}
->
-<option value="customer">customer</option>
-<option value="seller">seller</option>
-<option value="admin">admin</option>
-</select>
-</td>
-<td>
-<label className="switch" title={d.is_active ? "Actif" : "Inactif"}>
-<input
-
-                              type="checkbox"
-
-                              checked={d.is_active}
-
-                              onChange={(e) => onToggleActive(u, e.target.checked)}
-
-                            />
-<span className="slider" />
-</label>
-<div className="mt-1">
-<StatusBadge active={d.is_active} />
-</div>
-</td>
-<td>{fmtDate(u.created_at)}</td>
-<td style={{ textAlign: "right" }}>
-<button
-
-                            className="btn save-btn"
-
-                            disabled={!dirty || d.saving}
-
-                            onClick={() => onSave(u)}
->
-
-                            {d.saving ? "Enregistrement…" : "Enregistrer"}
-</button>
-
-                          {d.error && <div className="error">{d.error}</div>}
-</td>
-</tr>
-
-                    );
-
-                  })}
-</tbody>
-</table>
-</div>
-
-          )}
-</div>
-
-      )}
-</div>
-
+                  return (
+                    <tr key={String(u.id)}>
+                      <td style={tdLeft}>
+                        <div className="font-semibold">{fullName}</div>
+                        <div className="opacity-70" style={{ fontSize: 12 }}>
+                          {u.email ?? "—"}
+                        </div>
+                      </td>
+                      <td style={tdLeft}>
+                        <select
+                          className="role-select"
+                          value={role}
+                          onChange={(e) =>
+                            setDraft(u.id, { role: e.target.value as Role })
+                          }
+                        >
+                          {ROLE_OPTIONS.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={tdLeft}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                          }}
+                        >
+                          <Badge kind={active ? "ok" : "warn"}>
+                            {active ? "Actif" : "Inactif"}
+                          </Badge>
+                          <Switch
+                            checked={active}
+                            onChange={(next) =>
+                              setDraft(u.id, { is_active: next })
+                            }
+                          />
+                        </div>
+                      </td>
+                      <td style={tdLeft}>{fmtDate(u.created_at)}</td>
+                      <td style={tdRight}>
+                        <button
+                          className="btn"
+                          disabled={!dirty || isSaving}
+                          onClick={() => saveOne(u)}
+                        >
+                          {isSaving ? "Enregistrement…" : "Enregistrer"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   );
-
- }
+}

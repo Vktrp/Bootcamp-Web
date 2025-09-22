@@ -1,25 +1,17 @@
-// src/routes/admin.js
+import { Router } from "express";
 
- import express from "express";
+ import { requireAuth, requireAdmin } from "../middleware/authMiddleware.js";
 
- import { requireAdmin } from "../middleware/authMiddleware.js";
+ import { listUsers, updateUser } from "../controllers/usersController.js";
 
- import {
+ const router = Router();
 
-  listUsers,
+ // Liste des users pour l'UI admin
 
-  updateUserRole,
+ router.get("/users", requireAuth, requireAdmin, listUsers);
 
-  setUserActive,
+ // Mise à jour rôle / is_active
 
- } from "../controllers/usersController.js";
-
- const router = express.Router();
-
- router.get("/users", requireAdmin, listUsers);
-
- router.patch("/users/:id/role", requireAdmin, updateUserRole);
-
- router.patch("/users/:id/active", requireAdmin, setUserActive);
+ router.patch("/users/:id", requireAuth, requireAdmin, updateUser);
 
  export default router;

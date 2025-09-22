@@ -1,123 +1,73 @@
-// src/controllers/adminUsersController.js
+import pool from "../db.js";
 
- import pool from "../models/db.js";
+/** GET /admin/users */
 
- // GET /admin/users?limit=&offset=
-
- export async function listUsers(req, res) {
-
+export async function listUsers(req, res) {
   try {
-
-    const limit = Number(req.query.limit || 50);
-
-    const offset = Number(req.query.offset || 0);
-
     const { rows } = await pool.query(
-
       `select id, email, first_name, last_name, role, is_active, created_at
 
-       from public.users
+       from users
 
        order by created_at desc
 
-       limit $1 offset $2`,
-
-      [limit, offset]
-
+       limit 200`
     );
 
     res.json(rows);
-
   } catch (e) {
+    console.error("listUsers error:", e);
 
-    console.error("[admin] listUsers error:", e);
-
-    res.status(500).json({ message: "Server error" });
-
+    res.status(500).json({ message: "Erreur serveur." });
   }
+}
 
- }
+/** PATCH /admin/users/:id  body: { role?, is_active? } */
 
- // PATCH /admin/users/:id/role  { role: "admin"|"seller"|"customer" }
-
- export async function updateUserRole(req, res) {
-
+export async function updateUser(req, res) {
   try {
+    const id = req.params.id;
 
-    const { id } = req.params;
+    const { role, is_active } = req.body ?? {};
 
-    const { role } = req.body;
+    const sets = [];
 
-    const roles = ["admin", "seller", "customer"];
+    const vals = [];
 
-    if (!roles.includes(String(role))) {
+    let i = 1;
 
-      return res.status(400).json({ message: "Invalid role" });
-
+    if (typeof role === "string") {
+      sets.push(`role=$${i++}`);
+      vals.push(role);
     }
 
+    if (typeof is_active === "boolean") {
+      sets.push(`is_active=$${i++}`);
+      vals.push(is_active);
+    }
+
+    if (sets.length === 0)
+      return res.status(400).json({ message: "Nothing to update" });
+
+    vals.push(id);
+
     const { rows } = await pool.query(
+      `update users set ${sets.join(", ")}, updated_at = now()
 
-      `update public.users
-
-         set role = $1, updated_at = now()
-
-       where id = $2
+       where id = $${i}
 
        returning id, email, first_name, last_name, role, is_active, created_at`,
 
-      [role, id]
-
+      vals
     );
 
-    if (!rows.length) return res.status(404).json({ message: "User not found" });
+    if (rows.length === 0)
+      return res.status(404).json({ message: "Not found" });
 
     res.json(rows[0]);
-
   } catch (e) {
+    console.error("updateUser error:", e);
 
-    console.error("[admin] updateUserRole error:", e);
-
-    res.status(500).json({ message: "Server error" });
-
+    res.status(500).json({ message: "Erreur serveur." });
   }
-
- }
-
- // PATCH /admin/users/:id/active  { is_active: true|false }
-
- export async function setUserActive(req, res) {
-
-  try {
-
-    const { id } = req.params;
-
-    const { is_active } = req.body;
-
-    const { rows } = await pool.query(
-
-      `update public.users
-
-         set is_active = $1, updated_at = now()
-
-       where id = $2
-
-       returning id, email, first_name, last_name, role, is_active, created_at`,
-
-      [!!is_active, id]
-
-    );
-
-    if (!rows.length) return res.status(404).json({ message: "User not found" });
-
-    res.json(rows[0]);
-
-  } catch (e) {
-
-    console.error("[admin] setUserActive error:", e);
-
-    res.status(500).json({ message: "Server error" });
-
-  }
-
- }
+}
