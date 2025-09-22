@@ -1,273 +1,188 @@
-import { useMemo, useState } from "react";
-import { useSelector, useDispatch } from "react-redux";
-import { RootState } from "../../app/store";
-import {
-  selectCartItems,
-  selectCartTotalCents,
-  clearCart,
-  setQty,
-  removeItem,
-} from "../cart/slice";
-import { Link, useNavigate } from "react-router-dom";
+import { useState } from "react";
 
-function euros(cents?: number | null) {
-  if (cents == null) return "—";
-  return (cents / 100).toLocaleString("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-  });
-}
+ import { useSelector, useDispatch } from "react-redux";
 
-export default function CheckoutPage() {
+ import { useNavigate } from "react-router-dom";
+
+ import { createOrderFromCart, computeCartTotal } from "./api";
+
+ import { selectItems, clearCart } from "@/features/cart/slice";
+
+ import { selectUser } from "@/features/auth/slice";
+
+ export default function CheckoutPage() {
+
+  const items = useSelector(selectItems) as any[];
+
+  const user = useSelector(selectUser);
+
+  const total = computeCartTotal(items);
+
+  const nav = useNavigate();
+
   const dispatch = useDispatch();
-  const navigate = useNavigate();
 
-  const items = useSelector((s: RootState) => selectCartItems(s));
-  const itemsTotal = useSelector((s: RootState) => selectCartTotalCents(s));
+  const [email, setEmail] = useState(user?.email ?? "");
 
-  // form local (pré-rempli si tu as auth.user plus tard)
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
+  const [fullName, setFullName] = useState(
 
-  // CB fictive
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ")
+
+  );
+
+  const [address, setAddress] = useState(user?.address ?? "");
+
   const [cardNumber, setCardNumber] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvc, setCvc] = useState("");
 
-  const valid = useMemo(() => {
-    return (
-      fullName.trim() &&
-      email.includes("@") &&
-      address.trim() &&
-      cardNumber.replace(/\s+/g, "").length >= 12 &&
-      /\d{2}\/\d{2}/.test(expiry) &&
-      /^\d{3,4}$/.test(cvc)
-    );
-  }, [fullName, email, address, cardNumber, expiry, cvc]);
+  const [cardExp, setCardExp] = useState(""); // MM/YY
 
-  function pay() {
-    if (!valid) return;
-    // Ici tu pourrais appeler ton backend pour créer la commande
-    // On “vide” le panier et redirige vers la confirmation
-    dispatch(clearCart());
-    navigate("/checkout/success/DEMO1234");
-  }
+  const [cardCvc, setCardCvc] = useState("");
 
-  if (!items.length) {
-    return (
-      <div className="container-page">
-        <div className="card">
-          <div className="text-sm">Votre panier est vide.</div>
-          <div className="mt-2">
-            <Link to="/products" className="btn-outline">
-              ← Continuer mes achats
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+  const [loading, setLoading] = useState(false);
+
+  const [err, setErr] = useState<string | null>(null);
+
+  async function onPay(e: React.FormEvent) {
+
+    e.preventDefault();
+
+    if (!items?.length) {
+
+      setErr("Votre panier est vide.");
+
+      return;
+
+    }
+
+    setErr(null);
+
+    setLoading(true);
+
+    try {
+
+      const { orderId } = await createOrderFromCart(
+
+        user ?? null,
+
+        items,
+
+        {
+
+          email,
+
+          full_name: fullName || null,
+
+          address: address || null,
+
+          cardNumber,
+
+          cardExp,
+
+          cardCvc,
+
+        }
+
+      );
+
+      // vidage panier + redirection
+
+      dispatch(clearCart());
+
+      nav(`/order/${orderId}/confirmation`, { replace: true });
+
+    } catch (e: any) {
+
+      setErr(e?.message || "Paiement impossible.");
+
+    } finally {
+
+      setLoading(false);
+
+    }
+
   }
 
   return (
-    <div
-      className="container-page"
-      style={{ display: "grid", gap: 16, gridTemplateColumns: "1.2fr 0.8fr" }}
-    >
-      {/* ===== Colonne gauche : formulaire ===== */}
-      <div className="card">
-        <h2 className="title-xl" style={{ fontSize: 22, marginBottom: 12 }}>
-          Informations
-        </h2>
+<div className="container-page" style={{ maxWidth: 760 }}>
+<div className="grid md:grid-cols-2 gap-4">
+<div className="card">
+<h2 className="text-lg font-semibold mb-3">Informations</h2>
+<form onSubmit={onPay} className="space-y-3">
+<div>
+<label>Nom complet</label>
+<input className="input" value={fullName} onChange={e => setFullName(e.target.value)} />
+</div>
+<div>
+<label>Email</label>
+<input className="input" type="email" required value={email} onChange={e => setEmail(e.target.value)} />
+</div>
+<div>
+<label>Adresse</label>
+<textarea className="input" value={address} onChange={e => setAddress(e.target.value)} />
+</div>
+<h3 className="mt-4 font-semibold">Carte bancaire (démo)</h3>
+<div>
+<label>Numéro de carte</label>
+<input className="input" inputMode="numeric" placeholder="4242 4242 4242 4242"
 
-        <label>Nom complet</label>
-        <input
-          className="input"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="Nom complet"
-        />
+                     value={cardNumber} onChange={e => setCardNumber(e.target.value)} />
+</div>
+<div className="grid grid-cols-2 gap-3">
+<div>
+<label>Expiration (MM/YY)</label>
+<input className="input" placeholder="12/26"
 
-        <div className="mt-2">
-          <label>Email</label>
-          <input
-            className="input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-          />
-        </div>
+                       value={cardExp} onChange={e => setCardExp(e.target.value)} />
+</div>
+<div>
+<label>CVC</label>
+<input className="input" inputMode="numeric" placeholder="123"
 
-        <div className="mt-2">
-          <label>Adresse</label>
-          <textarea
-            className="input"
-            rows={3}
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="Adresse de livraison"
-          />
-        </div>
+                       value={cardCvc} onChange={e => setCardCvc(e.target.value)} />
+</div>
+</div>
 
-        <h3 className="title-xl" style={{ fontSize: 18, margin: "18px 0 8px" }}>
-          Paiement (démo)
-        </h3>
-        <div
-          className="grid"
-          style={{
-            display: "grid",
-            gap: 8,
-            gridTemplateColumns: "1fr 140px 100px",
-          }}
-        >
-          <div>
-            <label>Numéro de carte</label>
-            <input
-              className="input"
-              placeholder="4242 4242 4242 4242"
-              value={cardNumber}
-              onChange={(e) => setCardNumber(e.target.value)}
-            />
-          </div>
-          <div>
-            <label>Expiration</label>
-            <input
-              className="input"
-              placeholder="MM/AA"
-              value={expiry}
-              onChange={(e) => setExpiry(e.target.value)}
-            />
-          </div>
-          <div>
-            <label>CVC</label>
-            <input
-              className="input"
-              placeholder="CVC"
-              value={cvc}
-              onChange={(e) => setCvc(e.target.value)}
-            />
-          </div>
-        </div>
+            {err && <div className="text-danger">{err}</div>}
+<button className="btn" disabled={loading}>
 
-        <div className="mt-3">
-          <button className="btn" onClick={pay} disabled={!valid}>
-            Payer {euros(itemsTotal)}
-          </button>
-        </div>
-      </div>
+              {loading ? "Paiement…" : `Payer ${total.toLocaleString("fr-FR",{style:"currency",currency:"EUR"})}`}
+</button>
+</form>
+</div>
+<div className="card">
+<h2 className="text-lg font-semibold mb-3">Récapitulatif</h2>
+<div className="space-y-2">
 
-      {/* ===== Colonne droite : récap ===== */}
-      <div className="card">
-        <h2 className="title-xl" style={{ fontSize: 22, marginBottom: 12 }}>
-          Récapitulatif
-        </h2>
+            {items.map((it, i) => (
+<div key={i} className="flex items-center justify-between">
+<div className="opacity-80">
 
-        <div className="mt-2" style={{ display: "grid", gap: 10 }}>
-          {items.map((it) => {
-            const line = (it.priceCents || 0) * (it.qty || 1);
-            return (
-              <div
-                key={it.sku + ":" + (it.size ?? "")}
-                className="card"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "84px 1fr auto",
-                  gap: 10,
-                  padding: 10,
-                }}
-              >
-                <div
-                  style={{
-                    width: 84,
-                    height: 64,
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    background: "var(--bg)",
-                  }}
-                >
-                  {it.image ? (
-                    <img
-                      src={it.image}
-                      alt={it.name}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      className="skeleton"
-                      style={{ width: "100%", height: "100%" }}
-                    />
-                  )}
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700 }}>{it.name}</div>
-                  <div className="text-sm">
-                    Taille EU: {String(it.size ?? "—")}
-                  </div>
-                  <div className="text-sm">Prix: {euros(it.priceCents)}</div>
-                  <div
-                    className="text-sm"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginTop: 6,
-                    }}
-                  >
-                    <label>Qté</label>
-                    <input
-                      className="input"
-                      style={{ width: 90 }}
-                      type="number"
-                      min={1}
-                      value={it.qty ?? 1}
-                      onChange={(e) =>
-                        dispatch(
-                          setQty({
-                            key: it.sku + ":" + (it.size ?? ""),
-                            qty: Math.max(1, Number(e.target.value)),
-                          })
-                        )
-                      }
-                    />
-                    <button
-                      className="btn-outline"
-                      onClick={() =>
-                        dispatch(
-                          removeItem({
-                            key: it.sku + ":" + (it.size ?? ""),
-                          })
-                        )
-                      }
-                      title="Retirer"
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                </div>
-                <div style={{ fontWeight: 700, alignSelf: "center" }}>
-                  {euros(line)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                  {it.name} {it.size ? `(EU ${it.size})` : ""}
+</div>
+<div>
 
-        <div className="menu-divider" style={{ margin: "12px 0" }} />
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontWeight: 800,
-          }}
-        >
-          <span>Total</span>
-          <span>{euros(itemsTotal)}</span>
-        </div>
-      </div>
-    </div>
+                  {(typeof it.priceCents === "number"
+
+                    ? it.priceCents / 100
+
+                    : Number(it.price ?? 0)
+
+                  ).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+
+                  {" × "}{it.qty ?? 1}
+</div>
+</div>
+
+            ))}
+<div className="border-t border-white/10 mt-2 pt-2 flex items-center justify-between font-semibold">
+<span>Total</span>
+<span>{total.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+
   );
-}
+
+ }

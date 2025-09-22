@@ -1,275 +1,404 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { listUsers, type UserRow } from "./api";
+// src/features/admin/UsersTable.tsx
 
-function BackBar() {
-  const navigate = useNavigate();
-  return (
-    <div
-      style={{
-        position: "sticky",
-        top: 55,
-        zIndex: 40,
-        margin: "8px 0 12px",
-        width: "15vw",
-        marginLeft: "calc(50% - 50vw)",
-        paddingLeft: 12,
-      }}
-    >
-      <button className="btn-outline" onClick={() => navigate(-1)}>
-        ← Retour
-      </button>
-    </div>
-  );
-}
+ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-/* ───── Badges ───── */
-function Badge({
-  kind,
-  children,
-}: {
-  kind: "ok" | "warn" | "error" | "info";
-  children: React.ReactNode;
-}) {
-  const styles: Record<string, React.CSSProperties> = {
-    ok: { background: "rgba(34,197,94,.18)", color: "rgb(187,247,208)" },
-    warn: { background: "rgba(234,179,8,.22)", color: "rgb(253,230,138)" },
-    error: { background: "rgba(239,68,68,.20)", color: "rgb(254,202,202)" },
-    info: { background: "rgba(59,130,246,.20)", color: "rgb(191,219,254)" },
+ import { useMemo, useState } from "react";
+
+ import {
+
+  listUsers,
+
+  updateUserRole,
+
+  setUserActive,
+
+  type UserRow,
+
+ } from "./api";
+
+ type Role = "admin" | "seller" | "customer";
+
+ function StatusBadge({ active }: { active: boolean }) {
+
+  const kind = active ? "ok" : "error";
+
+  const label = active ? "Actif" : "Inactif";
+
+  const palette: Record<string, { bg: string; fg: string }> = {
+
+    ok: { bg: "rgba(34,197,94,.18)", fg: "rgb(34,197,94)" },
+
+    error: { bg: "rgba(239,68,68,.20)", fg: "rgb(239,68,68)" },
+
   };
+
   return (
-    <span
+<span
+
       style={{
-        ...styles[kind],
-        padding: "3px 8px",
-        fontSize: 11,
+
+        background: palette[kind].bg,
+
+        color: palette[kind].fg,
+
+        padding: "4px 8px",
+
+        fontSize: 12,
+
         borderRadius: 8,
+
         fontWeight: 800,
+
         lineHeight: 1,
+
         whiteSpace: "nowrap",
+
         display: "inline-block",
+
       }}
-    >
-      {children}
-    </span>
+>
+
+      {label}
+</span>
+
   );
-}
-const roleBadge = (role?: string | null) => {
-  const r = (role ?? "").toLowerCase();
-  if (r === "admin") return <Badge kind="info">admin</Badge>;
-  if (r === "seller") return <Badge kind="warn">seller</Badge>;
-  return <Badge kind="ok">customer</Badge>;
-};
-const activeBadge = (active?: boolean | null) =>
-  active ? <Badge kind="ok">oui</Badge> : <Badge kind="error">non</Badge>;
 
-function fmtDate(iso?: string | null) {
+ }
+
+ function fmtDate(iso?: string | null) {
+
   if (!iso) return "—";
+
   const d = new Date(iso);
-  return d.toLocaleString("fr-FR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+
+  return d.toLocaleDateString("fr-FR", { year: "numeric", month: "2-digit", day: "2-digit" });
+
+ }
+
+ export default function UsersTable() {
+
+  const qc = useQueryClient();
+
+  const [limit] = useState(50);
+
+  const [offset] = useState(0);
+
+  const { data = [], isLoading, error } = useQuery<UserRow[]>({
+
+    queryKey: ["admin-users", { limit, offset }],
+
+    queryFn: () => listUsers(limit, offset),
+
+    initialData: [],
+
   });
-}
 
-type SortKey = "created_at" | "email" | "role";
+  // état local d'édition par ligne
 
-export default function UsersTable() {
-  const [rows, setRows] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  type Draft = { role: Role; is_active: boolean; dirty: boolean; saving?: boolean; error?: string | null };
 
-  const [q, setQ] = useState("");
-  const [sort, setSort] = useState<SortKey>("created_at");
-  const [dir, setDir] = useState<"asc" | "desc">("desc");
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
 
-  useEffect(() => {
-    (async () => {
-      const data = await listUsers(500, 0);
-      setRows(data);
-      setLoading(false);
-    })();
-  }, []);
+  const rows = useMemo(() => data, [data]);
 
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    const base = qq
-      ? rows.filter((u) => {
-          const full = `${u.first_name ?? ""} ${
-            u.last_name ?? ""
-          }`.toLowerCase();
-          return (
-            u.email?.toLowerCase().includes(qq) ||
-            full.includes(qq) ||
-            (u.role ?? "").toLowerCase().includes(qq)
-          );
-        })
-      : rows.slice();
 
-    base.sort((a, b) => {
-      const mul = dir === "asc" ? 1 : -1;
-      if (sort === "created_at") {
-        return (
-          (new Date(a.created_at ?? 0).getTime() -
-            new Date(b.created_at ?? 0).getTime()) *
-          mul
-        );
+  // types de rappel
+
+ type Role = "admin" | "seller" | "customer";
+
+
+ // -----------------------------
+
+ // Remplace ta fonction setDraft
+
+ // -----------------------------
+
+ const setDraft = (id: string, patch: Partial<Draft>) =>
+
+  setDrafts((prev) => {
+
+    // point de départ = brouillon existant OU valeurs par défaut
+
+    const base: Draft = prev[id]
+
+      ? prev[id]
+
+      : {
+
+          role: "customer",
+
+          is_active: false,
+
+          dirty: false,
+
+        };
+
+    // IMPORTANT : un seul objet, un seul 'dirty'
+
+    return {
+
+      ...prev,
+
+      [id]: {
+
+        ...base,        // garde l’existant s’il y en a
+
+        ...patch,       // applique les modifs passées à setDraft(...)
+
+        dirty: true,    // marque la ligne comme modifiée
+
+      },
+
+    };
+
+  });
+
+ // -------------------------------------------------------
+
+ // Optionnel mais conseillé : sécurise startDraftIfNeeded
+
+ // -------------------------------------------------------
+
+ const startDraftIfNeeded = (u: UserRow) =>
+
+  setDrafts((prev) =>
+
+    prev[u.id]
+
+      ? prev
+
+      : {
+
+          ...prev,
+
+          [u.id]: {
+
+            role: (u.role ?? "customer") as Role,
+
+            is_active: !!u.is_active,
+
+            dirty: false,
+
+          },
+
+        }
+
+  );
+  
+  const onChangeRole = (u: UserRow, role: Role) => {
+
+    startDraftIfNeeded(u);
+
+    setDraft(u.id, { role });
+
+  };
+
+  const onToggleActive = (u: UserRow, next: boolean) => {
+
+    startDraftIfNeeded(u);
+
+    setDraft(u.id, { is_active: next });
+
+  };
+
+  const onSave = async (u: UserRow) => {
+
+    const d = drafts[u.id];
+
+    if (!d || (!d.dirty && d.saving === false)) return;
+
+    setDraft(u.id, { saving: true, error: null });
+
+    try {
+
+      // applique seulement ce qui change
+
+      if (d.role !== (u.role ?? "customer")) {
+
+        await updateUserRole(u.id, d.role);
+
       }
-      if (sort === "email") {
-        return ((a.email ?? "") > (b.email ?? "") ? 1 : -1) * mul;
+
+      if (Boolean(d.is_active) !== Boolean(u.is_active)) {
+
+        await setUserActive(u.id, d.is_active);
+
       }
-      return ((a.role ?? "") > (b.role ?? "") ? 1 : -1) * mul;
-    });
 
-    return base;
-  }, [rows, q, sort, dir]);
+      await qc.invalidateQueries({ queryKey: ["admin-users"] });
 
-  if (loading)
-    return (
-      <div className="container-page">
-        <BackBar />
-        Chargement…
-      </div>
-    );
+      setDrafts((prev) => ({ ...prev, [u.id]: { ...prev[u.id], dirty: false, saving: false } as Draft }));
 
-  const thLeft = { textAlign: "left" as const };
-  const thRight = { textAlign: "right" as const };
-  const tdLeft = {
-    textAlign: "left" as const,
-    verticalAlign: "middle" as const,
+    } catch (e: any) {
+
+      setDrafts((prev) => ({ ...prev, [u.id]: { ...prev[u.id], saving: false, error: e?.message || "Erreur" } as Draft }));
+
+    }
+
   };
-  const tdCenter = {
-    textAlign: "center" as const,
-    verticalAlign: "middle" as const,
-  };
-  const tdRight = {
-    textAlign: "right" as const,
-    verticalAlign: "middle" as const,
-  };
-  const thCenter = { textAlign: "center" as const };
 
   return (
-    <div className="container-page" style={{ maxWidth: 1200 }}>
-      <BackBar />
-      <style>{`
-        .admin-table { font-variant-numeric: tabular-nums; }
-        .admin-table thead th { font-weight: 700; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
-        .admin-table tbody td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.05); }
+<div className="container-page admin-page" style={{ maxWidth: 1100 }}>
+<style>{`
+
+        .admin-table { font-variant-numeric: tabular-nums; width: 100%; border-collapse: separate; border-spacing: 0; }
+
+        .admin-table thead th {
+
+          font-weight: 700; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left;
+
+        }
+
+        .admin-table tbody td {
+
+          padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.05); vertical-align: middle;
+
+        }
+
         .admin-table tbody tr:last-child td { border-bottom: 0; }
-        .admin-table th, .admin-table td { white-space: nowrap; }
-        .users-toolbar { padding: 16px; margin-bottom: 16px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
-        .table-frame { border-radius: 14px; }
+
+        .table-frame { border-radius: 14px; overflow: auto; }
+
+        .role-select { min-width: 150px; }
+
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+
+        .switch input { opacity: 0; width: 0; height: 0; }
+
+        .slider { position: absolute; cursor: pointer; inset: 0; background: #e5e7eb; border-radius: 999px; transition: .2s; }
+
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+
+        input:checked + .slider { background: #22c55e; }
+
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        .save-btn { font-weight: 700; }
+
+        .error { color: #c1121f; font-size: 12px; margin-top: 4px; }
+
       `}</style>
+<h1 className="text-xl font-semibold mb-3">Utilisateurs</h1>
 
-      <h1 className="text-2xl font-semibold mb-4">Utilisateurs</h1>
+      {isLoading && <div className="card p-4">Chargement…</div>}
 
-      <div className="card users-toolbar">
-        <input
-          className="input"
-          placeholder="Rechercher (email, nom, rôle)…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          style={{ minWidth: 320, height: 40, fontSize: 14 }}
-        />
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <select
-            className="input"
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            style={{ height: 40, fontSize: 14 }}
-          >
-            <option value="created_at">Créé le</option>
-            <option value="email">Email</option>
-            <option value="role">Rôle</option>
-          </select>
-          <button
-            className="btn-outline"
-            onClick={() => setDir((d) => (d === "asc" ? "desc" : "asc"))}
-            style={{ height: 40 }}
-            aria-label="Inverser l'ordre"
-          >
-            {dir === "asc" ? "↑" : "↓"}
-          </button>
-          <div className="text-sm opacity-70">
-            {filtered.length} résultat(s)
-          </div>
-        </div>
-      </div>
+      {error && <div className="card p-4 text-danger">Erreur de chargement.</div>}
 
-      <div className="card admin-wrapper">
-        <div className="table-frame">
-          <div className="table-scroll">
-            <table
-              className="min-w-full admin-table"
-              style={{
-                tableLayout: "fixed",
-                width: "100%",
-                fontSize: "clamp(12px, 1.4vw, 14px)",
-                lineHeight: 1.5,
-                borderCollapse: "separate",
-                borderSpacing: 0,
-              }}
-            >
-              <colgroup>
-                <col style={{ width: 80 }} />
-                <col style={{ width: 250 }} />
-                <col style={{ width: 180 }} />
-                <col style={{ width: 130 }} />
-                <col style={{ width: 110 }} />
-                <col style={{ width: 180 }} />
-              </colgroup>
+      {!isLoading && !error && (
+<div className="card admin-wrapper" style={{ marginTop: 6 }}>
 
-              <thead>
-                <tr>
-                  <th style={thLeft}>ID</th>
-                  <th style={thLeft}>Email</th>
-                  <th style={thLeft}>Nom</th>
-                  <th style={thCenter}>Rôle</th>
-                  <th style={thCenter}>Actif</th>
-                  <th style={thRight}>Créé le</th>
-                </tr>
-              </thead>
+          {rows.length === 0 ? (
+<div className="muted">Aucun utilisateur.</div>
 
-              <tbody>
-                {filtered.map((u) => (
-                  <tr key={u.id}>
-                    <td className="font-mono opacity-80" style={tdLeft}>
-                      {u.id}
-                    </td>
-                    <td style={tdLeft}>
-                      <div
-                        title={u.email ?? ""}
-                        style={{ overflow: "hidden", textOverflow: "ellipsis" }}
-                      >
-                        {u.email ?? "—"}
-                      </div>
-                    </td>
-                    <td style={tdLeft}>
-                      <div
-                        title={`${u.first_name ?? ""} ${u.last_name ?? ""}`}
-                        style={{ overflow: "hidden", textOverflow: "ellipsis" }}
-                      >
-                        {(u.first_name ?? "—") + " " + (u.last_name ?? "")}
-                      </div>
-                    </td>
-                    <td style={tdCenter}>{roleBadge(u.role)}</td>
-                    <td style={tdCenter}>{activeBadge(u.is_active)}</td>
-                    <td style={tdRight}>{fmtDate(u.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          ) : (
+<div className="table-frame">
+<table className="admin-table">
+<colgroup>
+<col style={{ width: 260 }} />
+<col style={{ width: 160 }} />
+<col style={{ width: 140 }} />
+<col style={{ width: 120 }} />
+<col style={{ width: 160 }} />
+<col style={{ width: 140 }} />
+</colgroup>
+<thead>
+<tr>
+<th>Email</th>
+<th>Nom</th>
+<th>Rôle</th>
+<th>Actif</th>
+<th>Créé le</th>
+<th style={{ textAlign: "right" }}>Actions</th>
+</tr>
+</thead>
+<tbody>
 
-        {filtered.length === 0 && (
-          <div className="muted mt-3">
-            Aucun utilisateur ne correspond à ta recherche.
-          </div>
-        )}
-      </div>
-    </div>
+                  {rows.map((u) => {
+
+                    const d = drafts[u.id] ?? {
+
+                      role: (u.role ?? "customer") as Role,
+
+                      is_active: !!u.is_active,
+
+                      dirty: false,
+
+                    };
+
+                    const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || "—";
+
+                    const dirty =
+
+                      d.dirty &&
+
+                      (d.role !== (u.role ?? "customer") || Boolean(d.is_active) !== Boolean(u.is_active));
+
+                    return (
+<tr key={u.id}>
+<td className="font-mono">{u.email || "—"}</td>
+<td>{name}</td>
+<td>
+<select
+
+                            className="input role-select"
+
+                            value={d.role}
+
+                            onChange={(e) => onChangeRole(u, e.target.value as Role)}
+>
+<option value="customer">customer</option>
+<option value="seller">seller</option>
+<option value="admin">admin</option>
+</select>
+</td>
+<td>
+<label className="switch" title={d.is_active ? "Actif" : "Inactif"}>
+<input
+
+                              type="checkbox"
+
+                              checked={d.is_active}
+
+                              onChange={(e) => onToggleActive(u, e.target.checked)}
+
+                            />
+<span className="slider" />
+</label>
+<div className="mt-1">
+<StatusBadge active={d.is_active} />
+</div>
+</td>
+<td>{fmtDate(u.created_at)}</td>
+<td style={{ textAlign: "right" }}>
+<button
+
+                            className="btn save-btn"
+
+                            disabled={!dirty || d.saving}
+
+                            onClick={() => onSave(u)}
+>
+
+                            {d.saving ? "Enregistrement…" : "Enregistrer"}
+</button>
+
+                          {d.error && <div className="error">{d.error}</div>}
+</td>
+</tr>
+
+                    );
+
+                  })}
+</tbody>
+</table>
+</div>
+
+          )}
+</div>
+
+      )}
+</div>
+
   );
-}
+
+ }
