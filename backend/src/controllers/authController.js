@@ -1,235 +1,202 @@
 // backend/src/controllers/authController.js
+
 import jwt from "jsonwebtoken";
+
 import bcrypt from "bcryptjs";
-import pg from "pg";
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? "")
-    ? false
-    : { rejectUnauthorized: false },
-});
+import pool from "../models/db.js"; // Pool PG centralisé
 
-/* ======================= UTIL ======================= */
+// Colonnes retournées côté API (address_line_1 -> address)
 
-async function getUsersColumns(client) {
-  const q = `
-    select column_name
-    from information_schema.columns
-    where table_schema = 'public' and table_name = 'users'
-  `;
-  const { rows } = await client.query(q);
-  return new Set(rows.map((r) => r.column_name));
+const USER_COLS = `
+
+  id,
+
+  email,
+
+  role,
+
+  first_name,
+
+  last_name,
+
+  address
+
+ `;
+
+/* ===================== Helpers ===================== */
+
+function signToken(user) {
+  return jwt.sign(
+    { id: user.id, role: user.role },
+
+    process.env.JWT_SECRET,
+
+    { expiresIn: "7d" }
+  );
 }
 
-function buildUserSelect(cols, { withPassword = false } = {}) {
-  const base = ["id", "email"];
-  base.push(cols.has("first_name") ? `"first_name"` : `null as "first_name"`);
-  base.push(cols.has("last_name") ? `"last_name"` : `null as "last_name"`);
-  base.push(cols.has("role") ? `"role"` : `null as "role"`);
-  if (withPassword) base.push(`"password_hash"`);
-  return `select ${base.join(", ")} from public.users`;
+function toPublicUser(row) {
+  return {
+    id: String(row.id),
+
+    email: row.email,
+
+    role: row.role,
+
+    first_name: row.first_name ?? null,
+
+    last_name: row.last_name ?? null,
+
+    address: row.address ?? null,
+  };
 }
 
-function assertJwtSecret() {
-  if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET manquant");
-  return process.env.JWT_SECRET;
-}
+/* ===================== Controllers ===================== */
 
-function makeToken(user) {
-  const secret = assertJwtSecret();
-  return jwt.sign({ id: user.id, role: user.role ?? null }, secret, {
-    expiresIn: "7d",
-  });
-}
-
-// Nettoie padding/retours/espaces (problèmes fréquents après copier/coller)
-// NE PAS supprimer les espaces internes !
-// On retire juste les null-bytes et les fins de ligne/padding à droite.
-function normalizeHash(h) {
-  if (typeof h !== "string") return undefined;
-  // retire null bytes en fin (si colonne CHAR)
-  let s = h.replace(/\u0000+$/g, "");
-  // retire uniquement CR/LF finaux (collage supabase)
-  s = s.replace(/[\r\n]+$/g, "");
-  // ne pas toucher aux espaces internes; juste trimEnd() pour padding à droite
-  return s.trimEnd();
-}
-
-async function comparePassword(input, storedRaw) {
-  const stored = normalizeHash(storedRaw);
-
-  // Cas bcrypt ($2a/$2b/$2y), longueur attendue = 60
-  if (stored && stored.startsWith("$2") && stored.length === 60) {
-    return bcrypt.compare(input, stored);
-  }
-
-  // Mode migration: autoriser le clair si explicitement activé
-  if (process.env.ALLOW_PLAINTEXT_PASSWORDS === "1" && typeof stored === "string") {
-    // ⚠️ comparaison stricte, on NE trim pas l'entrée
-    return input === stored;
-  }
-
-  return false;
-}
-
-
-/* ======================= HANDLERS ======================= */
+// POST /auth/register
 
 export async function register(req, res) {
-  const {
-    email,
-    password,
-    first_name = null,
-    last_name = null,
-  } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email et mot de passe requis." });
-  }
-
-  const client = await pool.connect();
   try {
-    const cols = await getUsersColumns(client);
-    if (!cols.has("password_hash")) {
-      return res
-        .status(500)
-        .json({ message: "Schéma invalide: colonne password_hash absente." });
+    const { email, password, first_name, last_name } = req.body ?? {};
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email et mot de passe requis." });
     }
 
-    const { rows: existing } = await client.query(
-      `select id from public.users where lower(email)=lower($1) limit 1`,
-      [email]
+    const emailLower = String(email).trim().toLowerCase();
+
+    // Email déjà pris ?
+
+    const dup = await pool.query(
+      "SELECT 1 FROM public.users WHERE lower(email) = $1 LIMIT 1",
+
+      [emailLower]
     );
-    if (existing.length)
-      return res.status(409).json({ message: "Email déjà utilisé." });
 
-    const password_hash = await bcrypt.hash(password, 10);
-
-    const fields = ["email", "password_hash"];
-    const values = [email, password_hash];
-    if (cols.has("first_name")) {
-      fields.push("first_name");
-      values.push(first_name);
-    }
-    if (cols.has("last_name")) {
-      fields.push("last_name");
-      values.push(last_name);
-    }
-    if (cols.has("role")) {
-      fields.push("role");
-      values.push("customer");
+    if (dup.rows.length) {
+      return res.status(409).json({ message: "Cet email est déjà utilisé." });
     }
 
-    const placeholders = fields.map((_, i) => `$${i + 1}`).join(", ");
-    await client.query(
-      `insert into public.users (${fields.join(
-        ", "
-      )}) values (${placeholders})`,
-      values
+    // Hash bcrypt
+
+    const salt = await bcrypt.genSalt(10);
+
+    const hash = await bcrypt.hash(String(password), salt);
+
+    await pool.query(
+      `INSERT INTO public.users (email, password_hash, role, first_name, last_name)
+
+       VALUES ($1, $2, $3, $4, $5)`,
+
+      [emailLower, hash, "customer", first_name ?? null, last_name ?? null]
     );
+
+    // Front fait ensuite un login → on renvoie juste ok
 
     return res.status(201).json({ ok: true });
   } catch (e) {
     console.error("REGISTER 500:", e);
+
     return res.status(500).json({ message: "Erreur serveur." });
-  } finally {
-    client.release();
   }
 }
+
+// POST /auth/login
 
 export async function login(req, res) {
-  const { email, password } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email et mot de passe requis." });
-  }
-
-  const client = await pool.connect();
   try {
-    const cols = await getUsersColumns(client);
-    if (!cols.has("password_hash")) {
-      return res
-        .status(500)
-        .json({ message: "Schéma invalide: colonne password_hash absente." });
+    const { email, password } = req.body ?? {};
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email et mot de passe requis." });
     }
 
-    const sel = buildUserSelect(cols, { withPassword: true });
-    const { rows } = await client.query(
-      `${sel} where lower(email)=lower($1) limit 1`,
-      [email]
+    const emailLower = String(email).trim().toLowerCase();
+
+    const { rows } = await pool.query(
+      `SELECT ${USER_COLS}, password_hash
+
+         FROM public.users
+
+        WHERE lower(email) = $1
+
+        LIMIT 1`,
+
+      [emailLower]
     );
-    if (!rows.length)
-      return res.status(401).json({ message: "Identifiants invalides." });
 
-    const user = rows[0];
-    const stored = normalizeHash(user.password_hash);
-
-    const ok = await comparePassword(password, stored);
-    if (!ok)
-      return res.status(401).json({ message: "Identifiants invalides." });
-
-    // Auto-migration vers bcrypt si on vient d'accepter un mot de passe clair
-    if (
-      process.env.ALLOW_PLAINTEXT_PASSWORDS === "1" &&
-      stored &&
-      !stored.startsWith("$2")
-    ) {
-      const newHash = await bcrypt.hash(password, 10);
-      await client.query(
-        `update public.users set password_hash=$1 where id=$2`,
-        [newHash, user.id]
-      );
-      user.password_hash = newHash;
+    if (!rows.length) {
+      return res
+        .status(401)
+        .json({ message: "Email ou mot de passe invalide." });
     }
 
-    const token = makeToken(user);
-    delete user.password_hash;
+    const row = rows[0];
 
-    return res.json({
-      token,
-      user: {
-        id: String(user.id),
-        email: user.email,
-        role: user.role ?? null,
-        first_name: user.first_name ?? null,
-        last_name: user.last_name ?? null,
-        address: null,
-      },
-    });
+    const allowPlain =
+      String(process.env.ALLOW_PLAINTEXT_PASSWORDS || "") === "1";
+
+    let ok = false;
+
+    // Si la base contient des mots de passe non hashés et que tu l'autorises
+
+    if (
+      allowPlain &&
+      row.password_hash &&
+      !String(row.password_hash).startsWith("$2")
+    ) {
+      ok = String(password) === String(row.password_hash);
+    } else {
+      ok = await bcrypt.compare(String(password), row.password_hash || "");
+    }
+
+    if (!ok) {
+      return res
+        .status(401)
+        .json({ message: "Email ou mot de passe invalide." });
+    }
+
+    const token = signToken({ id: row.id, role: row.role });
+
+    const user = toPublicUser(row);
+
+    return res.json({ token, user });
   } catch (e) {
     console.error("LOGIN 500:", e);
-    if (e && e.message === "JWT_SECRET manquant") {
-      return res.status(500).json({ message: "Configuration JWT manquante." });
-    }
+
     return res.status(500).json({ message: "Erreur serveur." });
-  } finally {
-    client.release();
   }
 }
 
-export async function me(req, res) {
-  const client = await pool.connect();
-  try {
-    const cols = await getUsersColumns(client);
-    const sel = buildUserSelect(cols, { withPassword: false });
-    const { rows } = await client.query(`${sel} where id=$1 limit 1`, [
-      req.user.id,
-    ]);
-    if (!rows.length)
-      return res.status(404).json({ message: "User not found" });
+// GET /auth/me  (protégé par le middleware d'auth)
 
-    const u = rows[0];
-    return res.json({
-      id: String(u.id),
-      email: u.email,
-      role: u.role ?? null,
-      first_name: u.first_name ?? null,
-      last_name: u.last_name ?? null,
-      address: null,
-    });
+export async function me(req, res) {
+  try {
+    const id = req.user?.id;
+
+    if (!id) return res.status(401).json({ message: "Non autorisé." });
+
+    const { rows } = await pool.query(
+      `SELECT ${USER_COLS}
+
+         FROM public.users
+
+        WHERE id = $1
+
+        LIMIT 1`,
+
+      [id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ message: "Utilisateur introuvable." });
+    }
+
+    return res.json(toPublicUser(rows[0]));
   } catch (e) {
     console.error("ME 500:", e);
+
     return res.status(500).json({ message: "Erreur serveur." });
-  } finally {
-    client.release();
   }
 }
