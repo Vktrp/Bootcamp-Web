@@ -1,11 +1,17 @@
-import pkg from "pg";
-import dotenv from "dotenv";
-dotenv.config();
+ import "dotenv/config";
 
-const { Pool } = pkg;
+ import pg from "pg";
 
-const pool = new Pool({
+ const pool = new pg.Pool({
+
   connectionString: process.env.DATABASE_URL,
-});
 
-export default pool;
+  ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? "")
+
+    ? false
+
+    : { rejectUnauthorized: false },
+
+ });
+
+ export default pool;

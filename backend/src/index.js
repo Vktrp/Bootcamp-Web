@@ -3,10 +3,12 @@ import "dotenv/config";
  import express from "express";
 
  import cors from "cors";
-
- import authRoutes from "./routes/auth.js";
  
+ import authRoutes from "./routes/auth.js";
+
  import adminRoutes from "./routes/admin.js";
+
+ import checkoutRoutes from "./routes/checkout.js";
 
  const app = express();
 
@@ -49,6 +51,8 @@ import "dotenv/config";
  app.get("/health", (req, res) => res.json({ ok: true }));
 
  app.use("/admin", adminRoutes);
+
+  app.use("/checkout", checkoutRoutes);
  // 404
 
  app.use((req, res) => res.status(404).json({ message: "Not found" }));
