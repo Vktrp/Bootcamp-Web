@@ -287,7 +287,19 @@ curl -i http://localhost:5050/auth/me \
 ```
 
 ---
+## Tests unitaires
 
+ Nous avons mis en place une petite batterie de tests unitaires pour sécuriser les comportements critiques côté front et back.
+Outils. Les tests sont écrits avec Vitest. Le front utilise l’environnement jsdom (configuré dans vite.config.js) pour tester du code React/Redux sans navigateur ; le back utilise l’environnement Node.
+Portée.
+
+ • Back-end : tests sur le middleware d’authentification (requireAuth / requireAdmin). On simule des requêtes HTTP avec en-tête Bearer, on vérifie qu’un JWT valide laisse passer (next() appelé) et qu’un token manquant/incorrect renvoie les bons codes (401/403). Les dépendances externes (JWT/Supabase) sont mockées afin d’éviter tout accès réel.
+
+ • Front-end : tests du cart slice Redux : addItem, setQty, removeItem, clearCart et les sélecteurs (selectCartItems, selectCartCount, selectCartTotalCents). On vérifie la déduplication par sku:size, l’incrément des quantités et le calcul des totaux en centimes.
+Exécution. Depuis frontend/ ou backend/ : npm run test (ou npm run test:ui pour l’interface Vitest).
+
+ Ces tests ne couvrent pas tout le projet, mais ils verrouillent les points les plus sensibles (authentification et panier) et servent de base pour étendre la couverture ultérieurement.
+---
 ## 📄 Licence
 
 Projet d’apprentissage — usage interne.
